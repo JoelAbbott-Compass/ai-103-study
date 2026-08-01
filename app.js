@@ -946,6 +946,8 @@
         body.appendChild(row);
       });
     } else if (s.kind === "memorize") {
+      body.appendChild(h("p", "gsec-cap muted small",
+        "Each fact below is a real flashcard in your deck — these are the ones to lock into memory."));
       if (s.note) { var n = h("div", "muted small gsec-note"); n.innerHTML = s.note; body.appendChild(n); }
       (s.items || []).forEach(function (it) {
         var row = h("div", "mem-row");
@@ -960,6 +962,8 @@
         body.appendChild(rb);
       }
     } else if (s.kind === "do") {
+      body.appendChild(h("p", "gsec-cap muted small",
+        "Hands-on practice for this section — do each step in Azure yourself, then check it off."));
       if (s.note) { var n2 = h("div", "muted small gsec-note"); n2.innerHTML = s.note; body.appendChild(n2); }
       var count = h("div", "do-count muted small");
       function refreshCount() {

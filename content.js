@@ -1124,7 +1124,6 @@ window.CONTENT = {
             "Regional vs global services — regional services (VMs, load balancers) require a region choice; global services don't.",
             "Region choice matters for AI beyond latency: <strong>data residency/compliance</strong> + <strong>service/model regional availability</strong>."
           ],
-          "note": "(Mirrors <code>output/flashcards/deck_D1_plan_manage.md</code> — C0001–C0005)",
           "cardIds": [
             "C0001",
             "C0002",
@@ -1141,8 +1140,7 @@ window.CONTENT = {
           "items": [
             "Open the Azure regions list / global infrastructure map. Pick the region you'd deploy a Foundry project in and record: AZ support? paired region? geography?",
             "In the Azure portal, check the <strong>regional availability of an Azure OpenAI / Foundry model</strong> — note which regions offer the model you'd want."
-          ],
-          "note": "(See <code>output/labs/lab_week1_azure_infra.md</code>)"
+          ]
         },
         {
           "key": "gotchas_5",
@@ -1222,7 +1220,6 @@ window.CONTENT = {
             "<strong>Azure Policy</strong> (what/how can deploy — preventive) vs <strong>Azure RBAC</strong> (who can do what — identity).",
             "Management group limit = <strong>10,000/tenant</strong>; Microsoft best practice = organize by <strong>workload</strong> (platform / applications), guided by the <strong>Cloud Adoption Framework</strong> + <strong>Landing Zones</strong>."
           ],
-          "note": "(Mirrors <code>output/flashcards/deck_D1_plan_manage.md</code> — C0006–C0012)",
           "cardIds": [
             "C0006",
             "C0007",
@@ -1243,8 +1240,7 @@ window.CONTENT = {
             "Create a throwaway <strong>resource group</strong>, deploy one small resource into it, then <strong>delete the resource group</strong> and confirm the resource is gone with it (the cascade-delete behavior).",
             "Open a <strong>subscription → Cost Management + Budgets</strong> and set a small <strong>budget</strong> — see how the quota/limit lives at the subscription level.",
             "Look at <strong>Access control (IAM)</strong> on a resource group vs a subscription — notice a role assigned higher up shows as <strong>inherited</strong> on the levels below."
-          ],
-          "note": "(See <code>output/labs/lab_week1_azure_infra.md</code>)"
+          ]
         },
         {
           "key": "gotchas_5",
