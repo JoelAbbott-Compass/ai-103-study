@@ -1003,73 +1003,73 @@ window.CONTENT = {
       "id": "C0001",
       "domain": "D1",
       "front": "What is an Azure *region*, and is it a single datacenter?",
-      "back": "A geographically distinct location that hosts Azure services. It contains **one or more datacenters** — never just one — so a single datacenter failure doesn't automatically down the region."
+      "back": "A geographically distinct location that hosts Azure services. It contains one or more datacenters — never just one — so a single datacenter failure doesn't automatically down the region."
     },
     {
       "id": "C0002",
       "domain": "D1",
       "front": "What is an Azure *region pair* — and who defines it?",
-      "back": "Two regions in the **same geography**, **defined by Microsoft** (customers cannot change pairings). Benefits: platform updates staged one region at a time, geo-redundant replication for some services (e.g., storage GRS), and data stays within the geography."
+      "back": "Two regions in the same geography, defined by Microsoft (customers cannot change pairings). Benefits: platform updates staged one region at a time, geo-redundant replication for some services (e.g., storage GRS), and data stays within the geography."
     },
     {
       "id": "C0003",
       "domain": "D1",
       "front": "What is an Availability Zone, and how many does a standard (larger) region have?",
-      "back": "A **physically separate** location *within one region*, with **independent power, cooling, and networking**. Larger regions have a **minimum of 3**. Spreading a workload across zones survives a single-datacenter/zone failure."
+      "back": "A physically separate location *within one region*, with independent power, cooling, and networking. Larger regions have a minimum of 3. Spreading a workload across zones survives a single-datacenter/zone failure."
     },
     {
       "id": "C0004",
       "domain": "D1",
       "front": "Regional vs global Azure services — what's the difference for deployment?",
-      "back": "**Regional** services (e.g., virtual machines, load balancers) require you to pick a region. **Global** services are reachable from any region with no region choice."
+      "back": "Regional services (e.g., virtual machines, load balancers) require you to pick a region. Global services are reachable from any region with no region choice."
     },
     {
       "id": "C0005",
       "domain": "D1",
       "front": "Beyond latency, why does region selection matter for an AI/Foundry deployment?",
-      "back": "Two reasons — **data residency/compliance** (keep data inside a required geography for GDPR/HIPAA/PCI/etc.) and **service/model regional availability** (newer models/services aren't offered in every region, so verify where a model exists before deploying)."
+      "back": "Two reasons — data residency/compliance (keep data inside a required geography for GDPR/HIPAA/PCI/etc.) and service/model regional availability (newer models/services aren't offered in every region, so verify where a model exists before deploying)."
     },
     {
       "id": "C0006",
       "domain": "D1",
       "front": "List the Azure resource hierarchy from top to bottom.",
-      "back": "**Management Group → Subscription → Resource Group → Resource.** Every resource lives inside all four containers at once."
+      "back": "Management Group → Subscription → Resource Group → Resource. Every resource lives inside all four containers at once."
     },
     {
       "id": "C0007",
       "domain": "D1",
       "front": "How many root management groups does an Azure tenant have, and what is it?",
-      "back": "Exactly **one** per tenant. The **root management group** is the top-level container for every resource in the tenant — you can't have zero or two."
+      "back": "Exactly one per tenant. The root management group is the top-level container for every resource in the tenant — you can't have zero or two."
     },
     {
       "id": "C0008",
       "domain": "D1",
       "front": "Which direction does governance inherit in the Azure hierarchy, and which two things inherit?",
-      "back": "**Downward.** **Azure RBAC** (role assignments) and **Azure Policy** (rules) set at a level apply to everything below it. Set at a management group → all subscriptions, resource groups, and resources beneath it; the higher you attach it, the broader it reaches."
+      "back": "Downward. Azure RBAC (role assignments) and Azure Policy (rules) set at a level apply to everything below it. Set at a management group → all subscriptions, resource groups, and resources beneath it; the higher you attach it, the broader it reaches."
     },
     {
       "id": "C0009",
       "domain": "D1",
       "front": "What is an Azure *subscription* — name its main roles.",
-      "back": "The **billing** boundary **and** an **isolation** boundary (resources in two subscriptions can't talk by default). Tied to **one Entra ID tenant** for access control, and it carries **quotas, limits, and budgets** (e.g., cap spend at $200/month)."
+      "back": "The billing boundary and an isolation boundary (resources in two subscriptions can't talk by default). Tied to one Entra ID tenant for access control, and it carries quotas, limits, and budgets (e.g., cap spend at $200/month)."
     },
     {
       "id": "C0010",
       "domain": "D1",
       "front": "What is a *resource group*, and its three key rules?",
-      "back": "A container for the actual resources. (1) (Nearly) every resource belongs to **exactly one** resource group — a few resource types deploy at subscription/mgmt-group/tenant scope. (2) It can **span regions but NOT subscriptions**. (3) **Deleting it deletes all resources inside.** Best practice: group resources that **share the same lifecycle**."
+      "back": "A container for the actual resources. (1) (Nearly) every resource belongs to exactly one resource group — a few resource types deploy at subscription/mgmt-group/tenant scope. (2) It can span regions but NOT subscriptions. (3) Deleting it deletes all resources inside. Best practice: group resources that share the same lifecycle."
     },
     {
       "id": "C0011",
       "domain": "D1",
       "front": "Azure Policy vs Azure RBAC — what does each control?",
-      "back": "**Azure Policy** = *what/how* can be deployed (preventive rules, e.g., \"only allow West Europe\"). **Azure RBAC** (Role-Based Access Control) = *who* can do *what* (identity-based permissions). Different tools; both inherit down the hierarchy."
+      "back": "Azure Policy = *what/how* can be deployed (preventive rules, e.g., \"only allow West Europe\"). Azure RBAC (Role-Based Access Control) = *who* can do *what* (identity-based permissions). Different tools; both inherit down the hierarchy."
     },
     {
       "id": "C0012",
       "domain": "D1",
       "front": "Management group limit per tenant, and Microsoft's best-practice organization?",
-      "back": "Up to **10,000** management groups per tenant. Best practice = organize by **workload** (a *platform* group with identity/management/connectivity; an *applications* group split into modern/legacy) — **not** by geography or department. Guided by the **Cloud Adoption Framework (CAF)** and **Landing Zones**."
+      "back": "Up to 10,000 management groups per tenant. Best practice = organize by workload (a *platform* group with identity/management/connectivity; an *applications* group split into modern/legacy) — not by geography or department. Guided by the Cloud Adoption Framework (CAF) and Landing Zones."
     }
   ],
   "guides": [

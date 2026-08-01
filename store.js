@@ -202,6 +202,24 @@ window.Store = (function () {
     }
     return out;
   }
+  // next N days of card reviews (anything already due counts as today)
+  function dueForecast(days) {
+    var t = todayStr(), counts = {};
+    CONTENT.cards.forEach(function (c) {
+      var s = state.cards[c.id];
+      var d = (!s || s.nextReview <= t) ? t : s.nextReview;
+      counts[d] = (counts[d] || 0) + 1;
+    });
+    var names = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+    var out = [];
+    for (var i = 0; i < days; i++) {
+      var d = addDays(t, i);
+      var p = d.split("-").map(Number);
+      var label = i === 0 ? "Today" : names[new Date(p[0], p[1] - 1, p[2]).getDay()];
+      out.push({ date: d, label: label, due: counts[d] || 0 });
+    }
+    return out;
+  }
   function mocks() { return state.mocks.slice(); }
   function recordMock(score, total) {
     state.mocks.push({ date: todayStr(), score: score, total: total, pct: Math.round((score / total) * 100) });
@@ -243,7 +261,7 @@ window.Store = (function () {
   return {
     todayStr: todayStr, daysToExam: daysToExam,
     recordAnswer: recordAnswer, lastAnswer: lastAnswer, misses: misses,
-    dueCards: dueCards, cardState: cardState, reviewCard: reviewCard,
+    dueCards: dueCards, cardState: cardState, reviewCard: reviewCard, dueForecast: dueForecast,
     buildSession: buildSession, weakestDomain: weakestDomain,
     perDomain: perDomain, cardCounts: cardCounts, calibration: calibration,
     streak: streak, studyDaysWindow: studyDaysWindow,

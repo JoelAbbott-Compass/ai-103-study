@@ -16,22 +16,90 @@
     return e;
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  // designed empty state: names the value + the next action (never "No data")
+  function emptyState(iconKey, title, sub, btnLabel, fn) {
+    var e = h("div", "empty");
+    var ic = h("div");
+    ic.innerHTML = (window.ICONS && ICONS[iconKey]) || "";
+    e.appendChild(ic);
+    e.appendChild(h("div", "empty-title", title));
+    e.appendChild(h("p", "empty-sub", sub));
+    if (btnLabel) {
+      var b = h("button", "btn btn-primary", btnLabel);
+      b.onclick = fn;
+      e.appendChild(b);
+    }
+    return e;
+  }
   function mount(node) { var v = document.getElementById("view"); clear(v); v.appendChild(node); v.scrollTop = 0; }
   var DOMAIN_NAME = {}; STUDY_DATA.domains.forEach(function (d) { DOMAIN_NAME[d.id] = d.name; });
+  function domainLabel(id) { return DOMAIN_NAME[id] || id; }
+
+  // ---- jargon explainers ----------------------------------------------------
+  // Every exam/app term a learner might not know gets a tap-to-open designed
+  // panel (never hover-only, never a bare helper paragraph). Facts below match
+  // store.js and CLAUDE.md exactly: gate 85% x2, ~90s/question mocks, mature =
+  // interval > 21 days, ladder 1/3/7/14/30, trust ramp 5-to-15 attempts.
+  var EXPLAIN = {
+    readiness: { term: "Readiness", text: "An honest 0-100 estimate of how prepared you are today. It blends your accuracy across the exam's weighted domains, how much of the course you've covered, how many flashcards are locked into long-term memory, and your pace. It starts near zero and has to be earned - no free points, so a low number early on is expected, not broken." },
+    gate: { term: "Booking gate", text: "The rule for booking the real exam: score 85% or higher on two different full-length timed mocks first. People typically score a bit lower on exam day than in practice, so clearing this bar means passing the real thing with a cushion." },
+    mock: { term: "Timed mock", text: "A practice exam on a real clock - about 90 seconds per question - graded at the end just like exam day, with no answer feedback until you finish. Mocks scoring 85% or higher count toward your booking gate." },
+    mature: { term: "Mature cards", text: "A flashcard is mature when you've recalled it correctly enough times that its next review is more than 3 weeks away. Mature means that fact is in long-term memory, not short-term cramming." },
+    stages: { term: "New, learning, mature", text: "Every card starts new. Once you rate it, it's learning: reviews come back at growing gaps (1, 3, 7, 14, then 30 days) - each successful recall pushes the next one further out. When a card's next review is more than 3 weeks away, it's mature: stored in long-term memory." },
+    accuracy: { term: "Accuracy and “provisional”", text: "Percent correct on the questions you've answered in each domain - not how much of the domain you've covered. A domain counts nothing toward readiness until you've made 5 attempts and only counts fully at 15, so a lucky handful of answers can't inflate the number. Until then the score is marked provisional." }
+  };
+  // one toggle behavior for both trigger styles; host = the surface the panel
+  // opens inside (one panel open per host at a time)
+  function wireExplain(btn, key, host) {
+    btn.setAttribute("aria-expanded", "false");
+    btn.onclick = function (e) {
+      e.stopPropagation();
+      var existing = host.querySelector(".explain[data-key='" + key + "']");
+      host.querySelectorAll(".explain").forEach(function (p) { p.remove(); });
+      host.querySelectorAll("[aria-expanded='true']").forEach(function (b) { b.setAttribute("aria-expanded", "false"); });
+      if (existing) return;                       // it was open - now closed
+      var p = h("div", "explain");
+      p.setAttribute("data-key", key);
+      p.appendChild(h("span", "explain-term", EXPLAIN[key].term));
+      p.appendChild(document.createTextNode(EXPLAIN[key].text));
+      // open directly under the row that holds the trigger button
+      var anchor = btn;
+      while (anchor && anchor.parentNode !== host) anchor = anchor.parentNode;
+      if (anchor) host.insertBefore(p, anchor.nextSibling);
+      else host.appendChild(p);
+      btn.setAttribute("aria-expanded", "true");
+    };
+  }
+  function infoBtn(key, host) {
+    var b = h("button", "info-btn");
+    b.innerHTML = (window.ICONS && ICONS.circleHelp) || "";
+    b.setAttribute("aria-label", "What does “" + EXPLAIN[key].term + "” mean?");
+    wireExplain(b, key, host);
+    return b;
+  }
+  function howBtn(key, label, host) {
+    var b = h("button", "how-btn");
+    b.innerHTML = (window.ICONS && ICONS.circleHelp) || "";
+    b.appendChild(document.createTextNode(label));
+    wireExplain(b, key, host);
+    return b;
+  }
 
   // ---- router -------------------------------------------------------------
+  // 5 tabs (bottom bar on phones). The timed mock lives inside Practice.
   var TABS = [
-    { id: "home", label: "Home", render: renderHome },
-    { id: "practice", label: "Practice", render: renderPractice },
-    { id: "cards", label: "Flashcards", render: renderFlashcards },
-    { id: "guides", label: "Guides", render: renderGuides },
-    { id: "mock", label: "Mock exam", render: renderMock },
-    { id: "progress", label: "Progress", render: renderProgress }
+    { id: "home", label: "Home", icon: "house", render: renderHome },
+    { id: "practice", label: "Practice", icon: "target", render: renderPractice },
+    { id: "cards", label: "Cards", icon: "layers", render: renderFlashcards },
+    { id: "guides", label: "Guides", icon: "bookOpen", render: renderGuides },
+    { id: "progress", label: "Progress", icon: "chartLine", render: renderProgress }
   ];
   function go(id) { location.hash = "#" + id; }
   function current() { return (location.hash || "#home").slice(1).split("/")[0]; }
   function route() {
     var id = current();
+    if (id === "mock") { location.hash = "#practice"; return; }   // legacy links
+    destroySheet();                                               // never orphan an open sheet
     var tab = TABS.filter(function (t) { return t.id === id; })[0] || TABS[0];
     document.querySelectorAll(".nav-btn").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === tab.id);
@@ -43,8 +111,12 @@
   function buildNav() {
     var nav = document.getElementById("nav");
     TABS.forEach(function (t) {
-      var b = h("button", "nav-btn", t.label);
+      var b = h("button", "nav-btn");
+      b.innerHTML = (window.ICONS && ICONS[t.icon]) || "";
+      var lab = h("span", "nav-label", t.label);
+      b.appendChild(lab);
       b.setAttribute("data-tab", t.id);
+      b.setAttribute("aria-label", t.label);
       b.onclick = function () { go(t.id); };
       nav.appendChild(b);
     });
@@ -58,10 +130,10 @@
     var cc = Store.cardCounts();
 
     var hero = h("div", "hero");
-    hero.appendChild(kpi("Days to exam", String(Store.daysToExam()), "Exam week Sep 28"));
-    hero.appendChild(ring("Readiness", Math.round(r * 100), 85));
-    hero.appendChild(kpi("Cards due", String(cc.due_today), cc.overdue + " overdue"));
-    hero.appendChild(kpi("Streak", Store.streak() + " d", "study days in a row"));
+    hero.appendChild(kpi("Days to exam", String(Store.daysToExam()), "Exam week Sep 28", "calendar", "slate"));
+    hero.appendChild(ringKpi(r * 100));
+    hero.appendChild(kpi("Cards due", String(cc.due_today), cc.overdue + " overdue", "layers", "orange"));
+    hero.appendChild(kpi("Streak", Store.streak() + " d", "study days in a row", "flame", "lime"));
     hero.appendChild(gateCard(gate));
     wrap.appendChild(hero);
 
@@ -81,49 +153,235 @@
 
     // shortcuts
     var grid = h("div", "shortcuts");
-    grid.appendChild(shortcut("Practice questions", "Answer, get graded, see why", "practice"));
-    grid.appendChild(shortcut("Flashcards", cc.due_today + " due today", "cards"));
-    grid.appendChild(shortcut("Study guides", CONTENT.guides.length + " section(s)", "guides"));
-    grid.appendChild(shortcut("Mock exam", "Timed, scored, feeds the gate", "mock"));
+    grid.appendChild(shortcut("Practice questions", "Answer, get graded, see why", "practice", "target", "orange"));
+    grid.appendChild(shortcut("Flashcards", cc.due_today + " due today", "cards", "layers", "slate"));
+    grid.appendChild(shortcut("Study guides", CONTENT.guides.length + " section(s)", "guides", "bookOpen", "slate"));
+    grid.appendChild(shortcut("Timed mock", "Timed, scored, feeds the gate", "practice", "timer", "slate"));
     wrap.appendChild(grid);
+
+    var band = courseBand();
+    if (band) wrap.appendChild(band);
+    wrap.appendChild(whatYoullLearn());
 
     mount(wrap);
   }
-  function shortcut(title, sub, tab) {
+  // small brand-tinted icon chip (tone: orange | lime | slate)
+  function chipIcon(iconKey, tone) {
+    var c = h("span", "chip tone-" + (tone || "slate"));
+    c.innerHTML = (window.ICONS && ICONS[iconKey]) || "";
+    return c;
+  }
+  function shortcut(title, sub, tab, iconKey, tone) {
     var c = h("button", "shortcut");
-    c.appendChild(h("div", "sc-title", title));
-    c.appendChild(h("div", "sc-sub muted", sub));
+    if (iconKey) c.appendChild(chipIcon(iconKey, tone));
+    var txt = h("div");
+    txt.appendChild(h("div", "sc-title", title));
+    txt.appendChild(h("div", "sc-sub muted", sub));
+    c.appendChild(txt);
     c.onclick = function () { go(tab); };
     return c;
   }
-  function kpi(title, val, sub) {
+  function kpi(title, val, sub, iconKey, tone, explainKey) {
     var c = h("div", "card kpi");
-    c.appendChild(h("div", "kpi-title", title));
+    var head = h("div", "kpi-head");
+    var tw = h("div", "kpi-title-wrap");
+    tw.appendChild(h("div", "kpi-title", title));
+    if (explainKey) tw.appendChild(infoBtn(explainKey, c));
+    head.appendChild(tw);
+    if (iconKey) head.appendChild(chipIcon(iconKey, tone));
+    c.appendChild(head);
     c.appendChild(h("div", "kpi-val", val));
     if (sub) c.appendChild(h("div", "kpi-sub muted", sub));
     return c;
   }
-  function ring(title, pct, target) {
-    var c = h("div", "card kpi ring-card");
-    c.appendChild(h("div", "kpi-title", title));
-    var v = h("div", "kpi-val", pct + "%");
-    v.classList.add(pct >= target ? "good" : (pct >= target * 0.7 ? "warn" : "bad"));
-    c.appendChild(v);
-    var bar = h("div", "bar"); var fill = h("div", "bar-fill");
-    fill.style.width = Math.min(100, pct) + "%";
-    fill.classList.add(pct >= target ? "good" : (pct >= target * 0.7 ? "warn" : "bad"));
-    bar.appendChild(fill); c.appendChild(bar);
-    c.appendChild(h("div", "kpi-sub muted", "target " + target + "%"));
+  // ---- SVG readiness ring (design decision 21) ----------------------------
+  // Hand-built stroke-dasharray ring: track n200, progress orange, round caps,
+  // 12 o'clock start. Animates in ONCE per page load (later renders paint
+  // instantly); the transition lives in CSS gated behind reduced-motion, and
+  // the start value is flushed with a forced reflow because rAF does not fire
+  // under headless --dump-dom (same trick as the answer sheet).
+  var animatedRings = {};
+  function svgRing(pct, size, ariaLabel, animKey) {
+    var NS = "http://www.w3.org/2000/svg";
+    var stroke = Math.max(8, Math.round(size / 11));
+    var r = (size - stroke) / 2;
+    var circ = 2 * Math.PI * r;
+    var clamped = Math.max(0, Math.min(100, pct));
+    var target = circ * (1 - clamped / 100);
+    var big = size >= 120;
+    // padded viewBox: the goal tick extends past the track and big rings carry
+    // an "85%" label outside it - both need breathing room beyond the circle
+    var pad = big ? 18 : 4;
+    var total = size + 2 * pad;
+
+    var box = h("div", "ringbox");
+    box.style.width = total + "px";
+    box.style.height = total + "px";
+    box.setAttribute("role", "img");
+    box.setAttribute("aria-label", ariaLabel);
+
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "ring-svg");
+    svg.setAttribute("width", total);
+    svg.setAttribute("height", total);
+    svg.setAttribute("viewBox", (-pad) + " " + (-pad) + " " + total + " " + total);
+    svg.setAttribute("aria-hidden", "true");
+
+    function circle(cls) {
+      var c = document.createElementNS(NS, "circle");
+      c.setAttribute("cx", size / 2);
+      c.setAttribute("cy", size / 2);
+      c.setAttribute("r", r);
+      c.setAttribute("fill", "none");
+      c.setAttribute("stroke-width", stroke);
+      c.setAttribute("class", cls);
+      return c;
+    }
+    var track = circle("ring-track");
+    var prog = circle("ring-prog");
+    // round caps read as a smudge below ~3% (the two cap dots overlap), and a
+    // round cap still paints a dot at 0% - butt caps under 3% fix both
+    prog.setAttribute("stroke-linecap", clamped >= 3 ? "round" : "butt");
+    prog.setAttribute("stroke-dasharray", String(circ));
+    prog.setAttribute("transform", "rotate(-90 " + (size / 2) + " " + (size / 2) + ")");
+    svg.appendChild(track);
+    // the 85% goal marker: onyx tick through the track, extending outward so it
+    // reads as a milestone flag, not a stray hairline (drawn at 12 o'clock,
+    // rotated to 85% of a turn = 306deg)
+    var ext = big ? 4 : 2;
+    var tick = document.createElementNS(NS, "line");
+    tick.setAttribute("class", "ring-tick");
+    tick.setAttribute("x1", size / 2);
+    tick.setAttribute("x2", size / 2);
+    tick.setAttribute("y1", size / 2 - r - stroke / 2 - ext);
+    tick.setAttribute("y2", size / 2 - r + stroke / 2);
+    tick.setAttribute("transform", "rotate(" + (0.85 * 360) + " " + (size / 2) + " " + (size / 2) + ")");
+    svg.appendChild(tick);
+    if (big) {
+      // "85%" label just outside the tick (306deg from 12 o'clock = upper left)
+      var rad = 0.85 * 2 * Math.PI;
+      var lr = r + stroke / 2 + ext + 8;
+      var lx = size / 2 + lr * Math.sin(rad);
+      var ly = size / 2 - lr * Math.cos(rad);
+      var lab = document.createElementNS(NS, "text");
+      lab.setAttribute("class", "ring-tick-label");
+      lab.setAttribute("x", lx);
+      lab.setAttribute("y", ly + 4);
+      lab.setAttribute("text-anchor", "middle");
+      lab.textContent = "85%";
+      svg.appendChild(lab);
+    }
+    svg.appendChild(prog);
+    if (clamped >= 85) prog.classList.add("hit");   // target reached: lime
+    box.appendChild(svg);
+
+    if (animKey && !animatedRings[animKey]) {
+      animatedRings[animKey] = true;
+      prog.style.strokeDashoffset = circ;       // start empty
+      void prog.getBoundingClientRect();        // flush so the transition runs
+      prog.style.strokeDashoffset = target;
+    } else {
+      prog.style.strokeDashoffset = target;
+    }
+    return box;
+  }
+  function readinessRing(pct, size, animKey, sub) {
+    pct = Math.round(pct);
+    var box = svgRing(pct, size,
+      "Readiness " + pct + " percent. Target 85 percent.", animKey);
+    box.classList.add(size >= 120 ? "ring-lg" : "ring-sm");
+    var num = h("div", "ring-num");
+    num.setAttribute("aria-hidden", "true");
+    num.appendChild(h("div", "ring-val", pct + "%"));
+    if (sub) num.appendChild(h("div", "ring-sub muted", sub));
+    box.appendChild(num);
+    return box;
+  }
+  function ringKpi(pct) {
+    var c = h("div", "card kpi kpi-ring");
+    var head = h("div", "kpi-head");
+    var tw = h("div", "kpi-title-wrap");
+    tw.appendChild(h("div", "kpi-title", "Readiness"));
+    tw.appendChild(infoBtn("readiness", c));
+    head.appendChild(tw);
+    head.appendChild(chipIcon("target", "orange"));
+    c.appendChild(head);
+    var row = h("div", "kpi-ring-row");
+    row.appendChild(readinessRing(pct, 72, "home"));
+    c.appendChild(row);
+    c.appendChild(h("div", "kpi-sub muted", "target 85%"));
     return c;
   }
   function gateCard(gate) {
     var c = h("div", "card kpi");
-    c.appendChild(h("div", "kpi-title", "Booking gate"));
+    var head = h("div", "kpi-head");
+    var tw = h("div", "kpi-title-wrap");
+    tw.appendChild(h("div", "kpi-title", "Booking gate"));
+    tw.appendChild(infoBtn("gate", c));
+    head.appendChild(tw);
+    head.appendChild(chipIcon("award", gate.cleared ? "lime" : "slate"));
+    c.appendChild(head);
     var v = h("div", "kpi-val", gate.passing + "/" + gate.needed);
     v.classList.add(gate.cleared ? "good" : "warn");
     c.appendChild(v);
     c.appendChild(h("div", "kpi-sub muted", "mocks ≥ " + gate.threshold + "%"));
     return c;
+  }
+  // ---- course identity (chunk 3.6): name + link the source course ----------
+  function courseBand() {
+    var c = STUDY_DATA.meta.course;
+    if (!c) return null;
+    var band = h("div", "course-band");
+    var chip = h("span", "chip");
+    chip.innerHTML = (window.ICONS && ICONS.graduationCap) || "";
+    band.appendChild(chip);
+    var txt = h("div");
+    txt.appendChild(h("div", "cb-kicker", "Your course"));
+    txt.appendChild(h("div", "cb-title", c.title));
+    txt.appendChild(h("div", "cb-sub",
+      c.platform + " course by " + c.author + " · " + c.total_lectures + " lectures · " + c.length));
+    if (c.url) {
+      var a = document.createElement("a");
+      a.className = "cb-link";
+      a.href = c.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.appendChild(document.createTextNode("Open the course on " + c.platform));
+      var ic = h("span");
+      ic.innerHTML = (window.ICONS && ICONS.externalLink) || "";
+      a.appendChild(ic.firstChild);
+      txt.appendChild(a);
+    }
+    band.appendChild(txt);
+    return band;
+  }
+  // "What you'll learn": the five exam domains with their real weights -
+  // doubles as orientation for anyone who didn't build the system
+  function whatYoullLearn() {
+    var sec = section("What you'll learn", "graduationCap");
+    var card = h("div", "card");
+    card.appendChild(h("p", "muted small",
+      "The exam tests five domains, weighted like this. Your practice and readiness follow the same weights."));
+    STUDY_DATA.domains.slice().sort(function (a, b) { return b.weight - a.weight; })
+      .forEach(function (d) {
+        var w = Math.round(d.weight * 100);
+        var row = h("div", "learn-row");
+        row.setAttribute("role", "img");
+        row.setAttribute("aria-label", d.name + ": " + w + " percent of the exam, " +
+          d.objectives_total + " objectives");
+        var line = h("div", "learn-line");
+        line.appendChild(h("span", "learn-name", d.name));
+        line.appendChild(h("span", "learn-val", w + "% of the exam · " + d.objectives_total + " objectives"));
+        row.appendChild(line);
+        var bar = h("div", "bar");
+        var fill = h("div", "bar-fill");
+        fill.style.width = w + "%";
+        bar.appendChild(fill);
+        row.appendChild(bar);
+        card.appendChild(row);
+      });
+    sec.appendChild(card);
+    return sec;
   }
 
   // ---- shared question runner --------------------------------------------
@@ -154,7 +412,7 @@
   function renderQuestion(q, mode, onGrade, onNext) {
     var wrap = h("div", "card qcard");
     var tags = h("div", "qtags muted");
-    tags.textContent = q.domain + " · obj " + q.objective + " · " + q.difficulty +
+    tags.textContent = domainLabel(q.domain) + " · objective " + q.objective + " · " + q.difficulty +
       (q.type === "multi" ? " · choose all" : q.type === "order" ? " · put in order" : "");
     wrap.appendChild(tags);
     wrap.appendChild(h("div", "qstem", q.stem));
@@ -219,8 +477,6 @@
     var submit = h("button", "btn btn-primary", mode === "mock" ? "Submit & next" : "Submit");
     actions.appendChild(submit);
     wrap.appendChild(actions);
-    var fb = h("div", "feedback");
-    wrap.appendChild(fb);
 
     submit.onclick = function () {
       if (submitted) return;
@@ -231,18 +487,58 @@
 
       if (mode === "mock") { onNext(); return; }
 
-      // practice feedback
+      // practice feedback: instant option states + slide-up answer sheet
       paintOptions(q, selected, optsBox);
-      fb.classList.add(isCorrect ? "ok" : "no");
-      fb.appendChild(h("div", "fb-head", isCorrect ? "Correct" : "Not quite"));
-      if (q.why) fb.appendChild(labeled("Why", q.why));
-      if (q.trap) fb.appendChild(labeled("Trap", q.trap));
       submit.style.display = "none";
-      var nb = h("button", "btn btn-primary", "Next →");
-      nb.onclick = onNext;
-      actions.appendChild(nb);
+      showAnswerSheet(isCorrect, q, onNext);
     };
     return wrap;
+  }
+
+  // ---- answer bottom sheet --------------------------------------------------
+  var activeSheet = null;
+  function destroySheet() {
+    if (!activeSheet) return;
+    document.removeEventListener("keydown", activeSheet.onKey);
+    if (activeSheet.node.parentNode) activeSheet.node.parentNode.removeChild(activeSheet.node);
+    activeSheet = null;
+  }
+  function showAnswerSheet(isCorrect, q, onNext) {
+    destroySheet();
+    var sheet = h("div", "answer-sheet " + (isCorrect ? "ok" : "no"));
+    var inner = h("div", "as-inner");
+    var head = h("div", "as-head");
+    head.innerHTML = (window.ICONS && ICONS[isCorrect ? "circleCheck" : "circleAlert"]) || "";
+    head.appendChild(document.createTextNode(isCorrect ? "Correct" : "Not quite"));
+    inner.appendChild(head);
+    if (!isCorrect && q.options) {
+      var ans = q.options.filter(function (o) { return o.correct; })
+        .map(function (o) { return o.key + ". " + o.text; }).join("  ·  ");
+      inner.appendChild(labeled("Answer", ans));
+    }
+    if (q.why) inner.appendChild(labeled("Why", q.why));
+    if (q.trap) inner.appendChild(labeled("Trap", q.trap));
+    var acts = h("div", "as-actions");
+    var btn = h("button", "btn btn-primary", isCorrect ? "Next" : "Got it");
+    acts.appendChild(btn);
+    inner.appendChild(acts);
+    sheet.appendChild(inner);
+    document.body.appendChild(sheet);
+    void sheet.offsetHeight;          // flush styles so the slide-up transition runs
+    sheet.classList.add("open");
+
+    var closed = false;
+    function close() {
+      if (closed) return;
+      closed = true;
+      destroySheet();
+      onNext();
+    }
+    function onKey(e) { if (e.key === "Enter") { e.preventDefault(); close(); } }
+    btn.onclick = close;
+    document.addEventListener("keydown", onKey);
+    activeSheet = { node: sheet, onKey: onKey };
+    btn.focus({ preventScroll: true });
   }
 
   function grade(q, selected) {
@@ -310,40 +606,57 @@
     var wrap = h("div", "view");
     wrap.appendChild(h("h1", null, "Practice questions"));
     var missCount = Store.misses().length;
+    var weakest = Store.weakestDomain();
 
-    var filters = h("div", "filters");
-    filters.appendChild(filterBtn("All (" + CONTENT.questions.length + ")", function () {
-      runQuestions(shuffleStable(CONTENT.questions), "practice", function (r) { showSessionDone(r, "Practice complete"); });
-    }));
-    filters.appendChild(filterBtn("Weakest domain: " + DOMAIN_NAME[Store.weakestDomain()], function () {
-      var w = Store.weakestDomain();
-      var list = CONTENT.questions.filter(function (q) { return q.domain === w; });
-      runQuestions(list, "practice", function (r) { showSessionDone(r, "Practice complete"); });
-    }));
-    var mb = filterBtn("Retry my misses (" + missCount + ")", function () {
-      var m = Store.misses();
-      if (!m.length) return;
-      runQuestions(m, "practice", function (r) { showSessionDone(r, "Misses cleared"); });
-    });
+    // practice modes as designed cards, not bare buttons
+    var grid = h("div", "shortcuts");
+    grid.appendChild(modeCard("target", "orange", "Mixed practice",
+      "All " + CONTENT.questions.length + " questions, shuffled", function () {
+        runQuestions(shuffleStable(CONTENT.questions), "practice", function (r) { showSessionDone(r, "Practice complete"); });
+      }));
+    grid.appendChild(modeCard("chartLine", "slate", "Weakest domain",
+      DOMAIN_NAME[weakest] + " — where you miss most", function () {
+        var list = CONTENT.questions.filter(function (q) { return q.domain === weakest; });
+        runQuestions(list, "practice", function (r) { showSessionDone(r, "Practice complete"); });
+      }));
+    var mb = modeCard("rotateCcw", "slate", "Retry my misses",
+      missCount ? missCount + " to clear" : "None right now — nice", function () {
+        var m = Store.misses();
+        if (!m.length) return;
+        runQuestions(m, "practice", function (r) { showSessionDone(r, "Misses cleared"); });
+      });
     if (!missCount) mb.disabled = true;
-    filters.appendChild(mb);
-    wrap.appendChild(filters);
+    grid.appendChild(mb);
+    wrap.appendChild(grid);
 
     // by domain
     var dom = h("div", "filters");
     STUDY_DATA.domains.forEach(function (d) {
       var n = CONTENT.questions.filter(function (q) { return q.domain === d.id; }).length;
       if (!n) return;
-      dom.appendChild(filterBtn(d.id + " (" + n + ")", function () {
+      var b = h("button", "pill", d.name + " · " + n);
+      b.setAttribute("aria-label", "Drill " + d.name + ", " + n + " questions");
+      b.onclick = function () {
         var list = CONTENT.questions.filter(function (q) { return q.domain === d.id; });
         runQuestions(list, "practice", function (r) { showSessionDone(r, "Practice complete"); });
-      }));
+      };
+      dom.appendChild(b);
     });
     wrap.appendChild(h("div", "muted small", "Or drill one domain:"));
     wrap.appendChild(dom);
+    wrap.appendChild(mockSection());
     mount(wrap);
   }
-  function filterBtn(label, fn) { var b = h("button", "btn", label); b.onclick = fn; return b; }
+  function modeCard(iconKey, tone, title, sub, fn) {
+    var c = h("button", "shortcut");
+    c.appendChild(chipIcon(iconKey, tone));
+    var txt = h("div");
+    txt.appendChild(h("div", "sc-title", title));
+    txt.appendChild(h("div", "sc-sub muted", sub));
+    c.appendChild(txt);
+    c.onclick = fn;
+    return c;
+  }
   function shuffleStable(arr) { // deterministic light shuffle by id char
     return arr.slice().sort(function (a, b) { return (a.id.charCodeAt(4) % 5) - (b.id.charCodeAt(4) % 5); });
   }
@@ -352,11 +665,53 @@
   function renderFlashcards() {
     var wrap = h("div", "view");
     wrap.appendChild(h("h1", null, "Flashcards"));
-    var cc = Store.cardCounts();
-    wrap.appendChild(h("p", "muted", cc.total + " total · " + cc.due_today + " due · " + cc.mature + " mature (interval > 21d)"));
+    var due = Store.dueCards();
+
+    // deck breakdown: new (never rated) / learning / mature (interval > 21d)
+    var counts = { fresh: 0, learning: 0, mature: 0 };
+    CONTENT.cards.forEach(function (c) {
+      var s = Store.cardState(c.id);
+      if (!s || s.box === 0) counts.fresh++;
+      else if (s.interval > 21) counts.mature++;
+      else counts.learning++;
+    });
+
+    var deck = h("div", "card deck-hero");
+    var top = h("div", "deck-top");
+    top.appendChild(chipIcon("layers", due.length ? "orange" : "lime"));
+    var nums = h("div");
+    nums.appendChild(h("div", "deck-due", String(due.length)));
+    nums.appendChild(h("div", "deck-due-lab", "due today · " + CONTENT.cards.length + " cards in the deck"));
+    top.appendChild(nums);
+    deck.appendChild(top);
+
+    var chips = h("div", "stat-chips");
+    chips.appendChild(h("span", "stat-chip tone-slate", counts.fresh + " new"));
+    chips.appendChild(h("span", "stat-chip tone-orange", counts.learning + " learning"));
+    chips.appendChild(h("span", "stat-chip tone-lime", counts.mature + " mature"));
+    chips.appendChild(infoBtn("stages", deck));
+    deck.appendChild(chips);
+
+    // 7-day due forecast (spaced repetition made visible)
+    var fc = Store.dueForecast(7);
+    var maxDue = Math.max.apply(null, fc.map(function (d) { return d.due; }).concat([1]));
+    var chart = h("div", "forecast");
+    chart.setAttribute("role", "img");
+    chart.setAttribute("aria-label", "Reviews due over the next 7 days: " +
+      fc.map(function (d) { return d.label + " " + d.due; }).join(", "));
+    fc.forEach(function (d, i) {
+      var col = h("div", "fcol" + (i === 0 ? " today" : ""));
+      col.appendChild(h("div", "fcol-n", String(d.due)));
+      var bar = h("div", "fbar");
+      bar.style.height = Math.max(4, Math.round((d.due / maxDue) * 56)) + "px";
+      col.appendChild(bar);
+      col.appendChild(h("div", null, d.label));
+      chart.appendChild(col);
+    });
+    deck.appendChild(chart);
+    deck.appendChild(h("p", "forecast-cap", "Spaced repetition schedules each card just before you'd forget it — this is your review load for the week."));
 
     var row = h("div", "filters");
-    var due = Store.dueCards();
     var b1 = h("button", "btn btn-primary", "Review due (" + due.length + ")");
     b1.onclick = function () { if (due.length) runFlashcardDeck(due, function () { go("cards"); }); };
     if (!due.length) b1.disabled = true;
@@ -364,9 +719,11 @@
     var b2 = h("button", "btn", "Review all (" + CONTENT.cards.length + ")");
     b2.onclick = function () { runFlashcardDeck(CONTENT.cards.slice(), function () { go("cards"); }); };
     row.appendChild(b2);
-    wrap.appendChild(row);
+    deck.appendChild(row);
+    wrap.appendChild(deck);
 
-    if (!due.length) wrap.appendChild(h("p", "muted small", "Nothing due right now — spaced repetition scheduled the rest for later. 'Review all' to study ahead."));
+    if (!due.length) wrap.appendChild(emptyState("circleCheck", "All caught up",
+      "Nothing due right now — spaced repetition has scheduled your next review. Use Review all if you want to study ahead.", null));
     mount(wrap);
   }
   function runFlashcardDeck(deck, onFinish) {
@@ -376,28 +733,61 @@
       if (i >= deck.length) { onFinish(); return; }
       var c = deck[i];
       var wrap = h("div", "runner");
-      wrap.appendChild(h("div", "runner-prog muted", "Card " + (i + 1) + " of " + deck.length + " · " + c.domain));
-      var card = h("div", "card flashcard");
-      card.appendChild(h("div", "fc-front", c.front));
-      var back = h("div", "fc-back");
-      back.appendChild(h("div", "fc-back-text", c.back));
-      back.style.display = "none";
-      card.appendChild(back);
+      wrap.appendChild(h("div", "runner-prog muted", "Card " + (i + 1) + " of " + deck.length + " · " + domainLabel(c.domain)));
 
-      var actions = h("div", "actions");
-      var flip = h("button", "btn btn-primary", "Show answer");
-      flip.onclick = function () {
-        back.style.display = "block";
-        actions.removeChild(flip);
+      // full-stage 3D flip card (tap/click anywhere on the card)
+      var stage = h("div", "fc-stage");
+      stage.setAttribute("role", "button");
+      stage.setAttribute("tabindex", "0");
+      stage.setAttribute("aria-label", "Flashcard. Activate to flip.");
+      var inner = h("div", "fc-inner");
+      var front = h("div", "fc-face");
+      front.appendChild(h("div", "fc-front", c.front));
+      var back = h("div", "fc-face back");
+      back.appendChild(h("div", "fc-back-text", c.back));
+      back.setAttribute("aria-hidden", "true");
+      inner.appendChild(front);
+      inner.appendChild(back);
+      stage.appendChild(inner);
+      wrap.appendChild(stage);
+      wrap.appendChild(h("div", "fc-hint", "Tap the card to flip. Desktop: space flips, 1 2 3 rates."));
+      var acts = h("div", "fc-actions");
+      wrap.appendChild(acts);
+
+      var revealed = false;
+      function flip() {
+        inner.classList.toggle("flipped");
+        var flipped = inner.classList.contains("flipped");
+        front.setAttribute("aria-hidden", flipped ? "true" : "false");
+        back.setAttribute("aria-hidden", flipped ? "false" : "true");
+        if (!revealed && flipped) { revealed = true; showRatings(); }
+      }
+      function showRatings() {
         ["again", "hard", "good"].forEach(function (rating) {
           var b = h("button", "btn rate rate-" + rating, rating[0].toUpperCase() + rating.slice(1));
-          b.onclick = function () { Store.reviewCard(c.id, rating); i++; show(); };
-          actions.appendChild(b);
+          b.onclick = function (e) { e.stopPropagation(); rate(rating); };
+          acts.appendChild(b);
         });
+      }
+      function rate(rating) {
+        cleanup();
+        Store.reviewCard(c.id, rating);
+        i++;
+        show();
+      }
+      function onDocKey(e) {
+        if (!revealed) return;
+        if (e.key === "1") rate("again");
+        else if (e.key === "2") rate("hard");
+        else if (e.key === "3") rate("good");
+      }
+      function cleanup() { document.removeEventListener("keydown", onDocKey); }
+      stage.onclick = flip;
+      stage.onkeydown = function (e) {
+        if (e.key === " " || e.key === "Enter") { e.preventDefault(); flip(); }
       };
-      actions.appendChild(flip);
-      card.appendChild(actions);
-      wrap.appendChild(card);
+      document.addEventListener("keydown", onDocKey);
+      window.addEventListener("hashchange", cleanup, { once: true });
       mount(wrap);
     }
     show();
@@ -428,7 +818,10 @@
         wrap.appendChild(h("div", "muted small", "Objectives: " + g.objectives + " · " + g.source));
         if (g.video) {
           var vwrap = h("div", "video-wrap");
-          vwrap.appendChild(h("div", "video-label", "▶ Watch overview"));
+          var vlab = h("div", "video-label");
+          vlab.innerHTML = (window.ICONS && ICONS.play) || "";
+          vlab.appendChild(document.createTextNode("Watch overview"));
+          vwrap.appendChild(vlab);
           var vid = document.createElement("video");
           vid.className = "guide-video";
           vid.src = g.video;
@@ -446,12 +839,11 @@
     mount(wrap);
   }
 
-  // ---- MOCK EXAM ----------------------------------------------------------
-  function renderMock() {
-    var wrap = h("div", "view");
-    wrap.appendChild(h("h1", null, "Mock exam"));
-    wrap.appendChild(h("p", "muted", "Timed and scored. Two mocks at ≥ " +
-      STUDY_DATA.meta.booking_gate.threshold + "% clears your booking gate. The bank grows each session — a full-length mock fills in over Weeks 7-8."));
+  // ---- TIMED MOCK (a mode inside Practice) ---------------------------------
+  function mockSection() {
+    var wrap = section("Timed mock", "timer", "mock");
+    wrap.appendChild(h("p", "muted small",
+      "The question bank grows every study session — a full-length mock fills in over Weeks 7-8."));
 
     var total = CONTENT.questions.length;
     var cfg = h("div", "mock-cfg card");
@@ -460,8 +852,8 @@
     var chosenN = counts[0];
     var row = h("div", "filters");
     counts.forEach(function (n) {
-      var b = h("button", "btn" + (n === chosenN ? " btn-primary" : ""), n + " questions");
-      b.onclick = function () { chosenN = n; row.querySelectorAll(".btn").forEach(function (x) { x.classList.remove("btn-primary"); }); b.classList.add("btn-primary"); };
+      var b = h("button", "pill" + (n === chosenN ? " on" : ""), n + " questions");
+      b.onclick = function () { chosenN = n; row.querySelectorAll(".pill").forEach(function (x) { x.classList.remove("on"); }); b.classList.add("on"); };
       row.appendChild(b);
     });
     cfg.appendChild(row);
@@ -483,7 +875,7 @@
       });
       wrap.appendChild(hst);
     }
-    mount(wrap);
+    return wrap;
   }
   function startMock(n) {
     var list = shuffleStable(CONTENT.questions).slice(0, n);
@@ -554,12 +946,13 @@
       by[d].a++; if (r.correct) by[d].c++;
     });
     Object.keys(by).sort().forEach(function (d) {
-      var line = h("div", "bd-row");
-      line.appendChild(h("span", "bd-dom", d));
       var pct = Math.round((by[d].c / by[d].a) * 100);
-      line.appendChild(barInline(pct));
-      line.appendChild(h("span", "muted", "  " + by[d].c + "/" + by[d].a));
-      box.appendChild(line);
+      var row = h("div", "dbar");
+      row.setAttribute("role", "img");
+      row.setAttribute("aria-label", domainLabel(d) + ": " + by[d].c + " of " + by[d].a + " correct");
+      row.appendChild(h("div", "dbar-lab", domainLabel(d) + " · " + by[d].c + "/" + by[d].a));
+      row.appendChild(barInline(pct, false));
+      box.appendChild(row);
     });
     return box;
   }
@@ -569,42 +962,59 @@
     var wrap = h("div", "view");
     wrap.appendChild(h("h1", null, "Progress"));
 
+    // hero: the SVG readiness ring is THE metric; everything else subordinate
     var r = Store.readiness();
-    var hero = h("div", "hero");
-    hero.appendChild(ring("Readiness", Math.round(r * 100), 85));
-    hero.appendChild(kpi("Days to exam", String(Store.daysToExam()), null));
-    hero.appendChild(gateCard(Store.gateStatus()));
     var cc = Store.cardCounts();
-    hero.appendChild(kpi("Mature cards", String(cc.mature), "best retention signal"));
+    var gate = Store.gateStatus();
+    var hero = h("div", "card prog-hero");
+    hero.appendChild(readinessRing(r * 100, 180, "progress", "of 85% target"));
+    var stats = h("div", "ph-stats");
+    stats.appendChild(phStat("Days to exam", String(Store.daysToExam())));
+    stats.appendChild(phStat("Booking gate", gate.passing + " of " + gate.needed + " mocks ≥ " + gate.threshold + "%", "gate", hero));
+    stats.appendChild(phStat("Mature cards", cc.mature + " of " + cc.total, "mature", hero));
+    stats.appendChild(howBtn("readiness", "How readiness works", hero));
+    hero.appendChild(stats);
     wrap.appendChild(hero);
 
-    // accuracy by domain (weakest first)
-    var dsec = section("Accuracy by domain (weakest first)");
-    dsec.appendChild(h("p", "muted small", "Percent correct on questions you've ANSWERED — not how much of the domain you've covered (see Objective coverage below). A domain only counts fully toward readiness after ≥10 attempts, so early scores are provisional."));
+    // accuracy by domain (weakest first) — direct-labeled bars, no legend
+    var dsec = section("Accuracy by domain (weakest first)", "target", "accuracy");
     var dd = Store.perDomain().slice().sort(function (a, b) {
       if (a.attempts === 0 && b.attempts === 0) return b.weight - a.weight;
       return a.accuracy - b.accuracy;
     });
     dd.forEach(function (d) {
-      var row = h("div", "dbar");
-      var lab = h("div", "dbar-lab");
-      lab.appendChild(h("span", "dbar-name", d.id + " · " + d.name));
-      var meta = "  " + Math.round(d.weight * 100) + "% of exam · " +
-        (d.attempts ? (d.correct + "/" + d.attempts + " correct") : "0 attempts") +
-        (d.attempts > 0 && d.attempts < 10 ? " · provisional" : "");
-      lab.appendChild(h("span", "muted small", meta));
-      row.appendChild(lab);
       var pct = d.attempts ? Math.round(d.accuracy * 100) : 0;
-      row.appendChild(barInline(pct, d.attempts === 0));
+      var val = d.attempts
+        ? pct + "% · " + d.attempts + " attempt" + (d.attempts === 1 ? "" : "s") +
+          (d.attempts < 15 ? " · provisional" : "")
+        : "no attempts yet";
+      var row = h("div", "dom-row");
+      row.setAttribute("role", "img");
+      row.setAttribute("aria-label", d.name + ", " +
+        Math.round(d.weight * 100) + " percent of the exam: " +
+        (d.attempts ? pct + " percent correct over " + d.attempts + " attempts" : "no attempts yet"));
+      var line = h("div", "dom-line");
+      line.appendChild(h("span", "dom-name", d.name));
+      line.appendChild(h("span", "dom-val muted", val));
+      row.appendChild(line);
+      var bar = h("div", "bar");
+      var fill = h("div", "bar-fill");
+      fill.style.width = pct + "%";
+      bar.appendChild(fill);
+      row.appendChild(bar);
       dsec.appendChild(row);
     });
+    dsec.appendChild(weakestNote(dd));
     wrap.appendChild(dsec);
 
     // coverage
-    var csec = section("Objective coverage");
+    var csec = section("Objective coverage", "listChecks");
     STUDY_DATA.domains.forEach(function (d) {
       var row = h("div", "dbar");
-      row.appendChild(h("div", "dbar-lab", d.id + " · touched " + d.objectives_touched + "/" + d.objectives_total + (d.gaps ? "  ·  " + d.gaps + " gaps" : "")));
+      row.setAttribute("role", "img");
+      row.setAttribute("aria-label", d.name + ": " + d.objectives_touched + " of " +
+        d.objectives_total + " objectives touched" + (d.gaps ? ", " + d.gaps + " known gaps" : ""));
+      row.appendChild(h("div", "dbar-lab", d.name + " · touched " + d.objectives_touched + "/" + d.objectives_total + (d.gaps ? "  ·  " + d.gaps + " gaps" : "")));
       row.appendChild(barInline(Math.round((d.objectives_touched / d.objectives_total) * 100), false));
       csec.appendChild(row);
     });
@@ -612,8 +1022,9 @@
 
     // calibration
     var cal = Store.calibration();
-    var calsec = section("Confidence vs accuracy");
-    if (!cal.length) calsec.appendChild(h("p", "muted", "Answer some practice questions (with a confidence tag) to see your calibration."));
+    var calsec = section("Confidence vs accuracy", "lightbulb");
+    if (!cal.length) calsec.appendChild(emptyState("target", "No calibration data yet",
+      "Answer practice questions and tag your confidence — this reveals blind spots (high confidence + wrong) before the exam room does.", "Go practice", function () { go("practice"); }));
     else {
       ["high", "med", "low"].forEach(function (tag) {
         var pts = cal.filter(function (p) { return p.tag === tag; });
@@ -621,6 +1032,8 @@
         var acc = Math.round(pts.reduce(function (s, p) { return s + p.correct; }, 0) / pts.length * 100);
         var wrongHi = pts.filter(function (p) { return !p.correct; }).length;
         var row = h("div", "dbar");
+        row.setAttribute("role", "img");
+        row.setAttribute("aria-label", tag + " confidence: " + acc + " percent correct over " + pts.length + " answers");
         var lbl = tag + " confidence (" + pts.length + ")";
         if (tag === "high" && wrongHi) lbl += "  ·  " + wrongHi + " blind-spot" + (wrongHi > 1 ? "s" : "");
         row.appendChild(h("div", "dbar-lab" + (tag === "high" && wrongHi ? " danger" : ""), lbl));
@@ -632,9 +1045,13 @@
     wrap.appendChild(calsec);
 
     // streak grid
-    var ssec = section("Study streak (last 30 days)");
+    var ssec = section("Study streak (last 30 days)", "flame");
+    var days = Store.studyDaysWindow(30);
+    var studiedCount = days.filter(function (d) { return d.studied; }).length;
     var grid = h("div", "streak-grid");
-    Store.studyDaysWindow(30).forEach(function (d) {
+    grid.setAttribute("role", "img");
+    grid.setAttribute("aria-label", "Studied on " + studiedCount + " of the last 30 days");
+    days.forEach(function (d) {
       var cell = h("div", "streak-cell" + (d.studied ? " on" : ""));
       cell.title = d.date;
       grid.appendChild(cell);
@@ -644,11 +1061,14 @@
     wrap.appendChild(ssec);
 
     // mock trend
-    var msec = section("Practice-exam trend");
+    var msec = section("Practice-exam trend", "chartLine");
     var mk = Store.mocks();
-    if (!mk.length) msec.appendChild(h("p", "muted", "No mocks yet. Take one from the Mock exam tab (Weeks 7-8)."));
+    if (!mk.length) msec.appendChild(emptyState("timer", "No mock scores yet",
+      "Take a timed mock from the Practice tab — two scores at 85%+ clear your booking gate.", "Go to Practice", function () { go("practice"); }));
     else mk.forEach(function (m) {
       var row = h("div", "dbar");
+      row.setAttribute("role", "img");
+      row.setAttribute("aria-label", "Mock on " + m.date + ": " + m.pct + " percent");
       row.appendChild(h("div", "dbar-lab", m.date));
       row.appendChild(barInline(m.pct, false));
       msec.appendChild(row);
@@ -656,7 +1076,7 @@
     wrap.appendChild(msec);
 
     // data controls
-    var xsec = section("Your data");
+    var xsec = section("Your data", "download");
     var brow = h("div", "filters");
     var exp = h("button", "btn", "Export progress");
     exp.onclick = function () { showExport(xsec); };
@@ -684,10 +1104,40 @@
     sec.appendChild(box);
     ta.focus(); ta.select();
   }
-  function section(title) {
+  function section(title, iconKey, explainKey) {
     var s = h("div", "section");
-    s.appendChild(h("h2", "section-h", title));
+    var head = h("h2", "section-h");
+    if (iconKey) {
+      var ic = h("span", "sh-icon");
+      ic.innerHTML = (window.ICONS && ICONS[iconKey]) || "";
+      head.appendChild(ic);
+    }
+    head.appendChild(document.createTextNode(title));
+    if (explainKey) head.appendChild(infoBtn(explainKey, s));
+    s.appendChild(head);
     return s;
+  }
+  function phStat(label, val, explainKey, host) {
+    var row = h("div", "ph-stat");
+    var lw = h("span", "kpi-title-wrap");
+    lw.appendChild(h("span", "ph-label", label));
+    if (explainKey && host) lw.appendChild(infoBtn(explainKey, host));
+    row.appendChild(lw);
+    row.appendChild(h("span", "ph-val", val));
+    return row;
+  }
+  // decision 22: the weakest HEAVY domain gets flagged in a plain sentence
+  function weakestNote(dd) {
+    var heavy = dd.filter(function (d) { return d.weight >= 0.2 && d.attempts > 0; });
+    if (!heavy.length) {
+      return h("p", "flag-note", "No heavy-domain attempts yet. " + DOMAIN_NAME.D2 +
+        " is a third of the exam — start your practice there.");
+    }
+    heavy.sort(function (a, b) { return a.accuracy - b.accuracy; });
+    var w = heavy[0];
+    return h("p", "flag-note", "Weakest heavy domain: " + w.name + " (" +
+      Math.round(w.weight * 100) + "% of the exam) at " + Math.round(w.accuracy * 100) +
+      "% correct. Steer practice time there first.");
   }
   function barInline(pct, empty) {
     var bar = h("div", "bar bar-inline");
@@ -702,6 +1152,19 @@
   }
 
   // ---- boot ---------------------------------------------------------------
+  function fillExamChip() {
+    var chip = document.getElementById("examChip");
+    if (!chip) return;
+    chip.hidden = false;
+    chip.innerHTML = (window.ICONS && ICONS.calendar) || "";
+    var days = Store.daysToExam();
+    var strong = h("strong", null, String(days));
+    chip.appendChild(strong);
+    var word = h("span", "chip-word", days === 1 ? "day to exam" : "days to exam");
+    chip.appendChild(word);
+    chip.setAttribute("aria-label", days + " days to exam");
+  }
   buildNav();
+  fillExamChip();
   route();
 })();

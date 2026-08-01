@@ -12,8 +12,19 @@ window.STUDY_DATA = {
     exam_date:   "2026-09-28",
     study_start: "2026-08-03",
     learner:     "Joel",
-    updated:     "2026-07-31",
-    booking_gate:{ exams_needed: 2, threshold: 85 }
+    updated:     "2026-08-01",
+    booking_gate:{ exams_needed: 2, threshold: 85 },
+    // Source course. Hand-authored until the W4 ledger owns it. Title + URL
+    // verified against christophernett.com/courses/ai-103 on 2026-08-01;
+    // lecture count and length from study_schedule.md.
+    course: {
+      title:  "Azure AI Apps and Agents Developer (AI-103)",
+      author: "Christopher Nett",
+      platform: "Udemy",
+      url:    "https://www.udemy.com/course/ai-103-azure-ai-apps-and-agents-developer-associate-c/",
+      total_lectures: 102,
+      length: "~13 hours"
+    }
   },
 
   // Domain weights sum to 1.00. objectives_touched/gaps come from coverage_map.md.
