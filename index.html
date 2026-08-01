@@ -214,6 +214,19 @@
   .bar-wrap{display:flex;align-items:center;gap:10px;}
   .bar-inline{flex:1;margin-top:0;}
   .bar-pct{min-width:42px;text-align:right;font-size:var(--fs-13);}
+  /* two-layer objective bar: light = covered by materials, solid lime = mastered */
+  .bar-layered{position:relative;}
+  .bar-layered .bar-fill{position:absolute;left:0;top:0;height:100%;}
+  .bar-layered .bar-fill.cover{background:color-mix(in srgb, var(--slate) 28%, #fff);}
+  .bar-layered .bar-fill.mastered{background:var(--lime);}
+  /* readiness trend sparkline (Progress hero) */
+  .spark{display:block;}
+  .spark-line{fill:none;stroke:var(--orange);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .spark-dot{fill:var(--orange);}
+  .ph-trend-val{display:inline-flex;align-items:center;gap:6px;}
+  .ph-trend-val .icon{width:16px;height:16px;}
+  .ph-trend-val.up{color:var(--lime-text);}
+  .ph-trend-val.flat, .ph-trend-val.down{color:var(--n500);}
 
   /* Study-now panel (solid onyx, no gradient) */
   .studynow{background:var(--onyx);color:#fff;border-radius:var(--radius);
@@ -508,6 +521,11 @@
   .dom-row .bar{margin-top:0;}
   .flag-note{background:var(--n50);border-left:3px solid var(--orange);
       padding:10px 14px;border-radius:6px;font-size:var(--fs-13);margin-top:14px;}
+  .flag-note.ok{border-left-color:var(--lime);}
+  /* course-band progress bar (Home) */
+  .cb-progress{margin-top:10px;max-width:420px;}
+  .cb-progress .bar{background:color-mix(in srgb, #fff 18%, transparent);margin-top:6px;}
+  .cb-progress-lab{font-size:var(--fs-13);color:rgba(255,255,255,.7);}
 
   .section{margin:32px 0;}
   .section-h{font-size:var(--fs-20);margin-bottom:12px;border-bottom:2px solid var(--n200);padding-bottom:6px;

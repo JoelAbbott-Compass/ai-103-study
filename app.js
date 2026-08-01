@@ -46,7 +46,10 @@
     mock: { term: "Timed mock", text: "A practice exam on a real clock - about 90 seconds per question - graded at the end just like exam day, with no answer feedback until you finish. Mocks scoring 85% or higher count toward your booking gate." },
     mature: { term: "Mature cards", text: "A flashcard is mature when you've recalled it correctly enough times that its next review is more than 3 weeks away. Mature means that fact is in long-term memory, not short-term cramming." },
     stages: { term: "New, learning, mature", text: "Every card starts new. Once you rate it, it's learning: reviews come back at growing gaps (1, 3, 7, 14, then 30 days) - each successful recall pushes the next one further out. When a card's next review is more than 3 weeks away, it's mature: stored in long-term memory." },
-    accuracy: { term: "Accuracy and “provisional”", text: "Percent correct on the questions you've answered in each domain - not how much of the domain you've covered. A domain counts nothing toward readiness until you've made 5 attempts and only counts fully at 15, so a lucky handful of answers can't inflate the number. Until then the score is marked provisional." }
+    accuracy: { term: "Accuracy and “provisional”", text: "Percent correct on the questions you've answered in each domain - not how much of the domain you've covered. A domain counts nothing toward readiness until you've made 5 attempts and only counts fully at 15, so a lucky handful of answers can't inflate the number. Until then the score is marked provisional." },
+    objectives: { term: "Covered vs mastered", text: "The exam is built from 64 specific skills Microsoft publishes, called objectives. Covered means your study materials have taught that skill. Mastered is proven: you've answered at least 3 different questions on it, got each one right on your latest try, and did it across at least 2 different days - so it's knowledge, not one lucky night. A gap is a skill the course skipped; extra material fills it before exam week." },
+    trend: { term: "Readiness trend", text: "The app saves your readiness once per study day and compares today with about a week ago. Early on the number itself stays low by design - under 10% before Week 3 is normal - so the direction matters more than the level. A rising line means the work is landing." },
+    calibration: { term: "Confidence vs accuracy", text: "After each practice answer you tag how sure you felt. This compares that feeling with reality. High confidence but wrong is the dangerous mix - those facts feel safe, so you never review them, and the exam room is where they surface. Low confidence but right means you know more than you give yourself credit for." }
   };
   // one toggle behavior for both trigger styles; host = the surface the panel
   // opens inside (one panel open per host at a time)
@@ -132,7 +135,7 @@
     var hero = h("div", "hero");
     hero.appendChild(kpi("Days to exam", String(Store.daysToExam()), "Exam week Sep 28", "calendar", "slate"));
     hero.appendChild(ringKpi(r * 100));
-    hero.appendChild(kpi("Cards due", String(cc.due_today), cc.overdue + " overdue", "layers", "orange"));
+    hero.appendChild(kpi("Cards due", String(cc.due_today), "tonight's review queue", "layers", "orange"));
     hero.appendChild(kpi("Streak", Store.streak() + " d", "study days in a row", "flame", "lime"));
     hero.appendChild(gateCard(gate));
     wrap.appendChild(hero);
@@ -354,6 +357,21 @@
       ic.innerHTML = (window.ICONS && ICONS.externalLink) || "";
       a.appendChild(ic.firstChild);
       txt.appendChild(a);
+    }
+    // course pace: how far through the lectures you are
+    var cp = Store.courseProgress();
+    if (cp.lectures_total) {
+      var prog = h("div", "cb-progress");
+      prog.setAttribute("role", "img");
+      prog.setAttribute("aria-label", cp.lectures_watched + " of " + cp.lectures_total + " lectures watched");
+      prog.appendChild(h("div", "cb-progress-lab",
+        cp.lectures_watched + " of " + cp.lectures_total + " lectures watched"));
+      var bar = h("div", "bar");
+      var fill = h("div", "bar-fill");
+      fill.style.width = Math.round((cp.lectures_watched / cp.lectures_total) * 100) + "%";
+      bar.appendChild(fill);
+      prog.appendChild(bar);
+      txt.appendChild(prog);
     }
     band.appendChild(txt);
     return band;
@@ -1193,9 +1211,24 @@
     stats.appendChild(phStat("Days to exam", String(Store.daysToExam())));
     stats.appendChild(phStat("Booking gate", gate.passing + " of " + gate.needed + " mocks ≥ " + gate.threshold + "%", "gate", hero));
     stats.appendChild(phStat("Mature cards", cc.mature + " of " + cc.total, "mature", hero));
+    stats.appendChild(trendStat(hero));
     stats.appendChild(howBtn("readiness", "How readiness works", hero));
     hero.appendChild(stats);
+    // the honest-low caption: shown only while readiness is actually low
+    if (r < 0.10) {
+      hero.appendChild(h("p", "flag-note", "This number is designed to start near zero and be earned - " +
+        "under 10% before Week 3 is expected. Watch the trend, not the level."));
+    }
     wrap.appendChild(hero);
+
+    // course position: the whole-course view (lectures + objectives)
+    var cp = Store.courseProgress();
+    var cpsec = section("Course progress", "graduationCap", "objectives");
+    cpsec.appendChild(courseRow("Lectures watched", cp.lectures_watched, cp.lectures_total,
+      "How far you are through the course videos."));
+    cpsec.appendChild(courseRow("Objectives mastered", cp.objectives_mastered, cp.objectives_total,
+      "Exam skills you've proven with correct answers on separate days."));
+    wrap.appendChild(cpsec);
 
     // accuracy by domain (weakest first) — direct-labeled bars, no legend
     var dsec = section("Accuracy by domain (weakest first)", "target", "accuracy");
@@ -1228,22 +1261,27 @@
     dsec.appendChild(weakestNote(dd));
     wrap.appendChild(dsec);
 
-    // coverage
-    var csec = section("Objective coverage", "listChecks");
-    STUDY_DATA.domains.forEach(function (d) {
+    // objectives by domain: covered (light) vs mastered (lime), per domain
+    var csec = section("Objectives by domain", "listChecks", "objectives");
+    Store.objectiveProgress().domains.forEach(function (d) {
       var row = h("div", "dbar");
       row.setAttribute("role", "img");
-      row.setAttribute("aria-label", d.name + ": " + d.objectives_touched + " of " +
-        d.objectives_total + " objectives touched" + (d.gaps ? ", " + d.gaps + " known gaps" : ""));
-      row.appendChild(h("div", "dbar-lab", d.name + " · touched " + d.objectives_touched + "/" + d.objectives_total + (d.gaps ? "  ·  " + d.gaps + " gaps" : "")));
-      row.appendChild(barInline(Math.round((d.objectives_touched / d.objectives_total) * 100), false));
+      row.setAttribute("aria-label", d.name + ": " + d.mastered + " of " + d.total +
+        " objectives mastered, " + d.touched + " covered so far" +
+        (d.gaps ? ", " + d.gaps + " known gap" + (d.gaps > 1 ? "s" : "") : ""));
+      row.appendChild(h("div", "dbar-lab",
+        d.name + " · " + d.mastered + " mastered · " + d.touched + " of " + d.total + " covered" +
+        (d.gaps ? "  ·  " + d.gaps + " gap" + (d.gaps > 1 ? "s" : "") : "")));
+      row.appendChild(layeredBar(d.mastered / d.total, d.touched / d.total));
       csec.appendChild(row);
     });
+    csec.appendChild(h("p", "muted small",
+      "Light fill = taught by your materials so far. Solid green = proven by your answers."));
     wrap.appendChild(csec);
 
     // calibration
     var cal = Store.calibration();
-    var calsec = section("Confidence vs accuracy", "lightbulb");
+    var calsec = section("Confidence vs accuracy", "lightbulb", "calibration");
     if (!cal.length) calsec.appendChild(emptyState("target", "No calibration data yet",
       "Answer practice questions and tag your confidence — this reveals blind spots (high confidence + wrong) before the exam room does.", "Go practice", function () { go("practice"); }));
     else {
@@ -1282,7 +1320,7 @@
     wrap.appendChild(ssec);
 
     // mock trend
-    var msec = section("Practice-exam trend", "chartLine");
+    var msec = section("Practice-exam trend", "chartLine", "mock");
     var mk = Store.mocks();
     if (!mk.length) msec.appendChild(emptyState("timer", "No mock scores yet",
       "Take a timed mock from the Practice tab — two scores at 85%+ clear your booking gate.", "Go to Practice", function () { go("practice"); }));
@@ -1347,15 +1385,118 @@
     row.appendChild(h("span", "ph-val", val));
     return row;
   }
-  // decision 22: the weakest HEAVY domain gets flagged in a plain sentence
+  // readiness trend: slope arrow + delta + sparkline in one hero stat row
+  function trendStat(host) {
+    var t = Store.readinessTrend();
+    var row = h("div", "ph-stat");
+    var lw = h("span", "kpi-title-wrap");
+    lw.appendChild(h("span", "ph-label", "7-day trend"));
+    lw.appendChild(infoBtn("trend", host));
+    row.appendChild(lw);
+    var val = h("span", "ph-val ph-trend-val");
+    if (!t.hasTrend) {
+      val.classList.add("flat");
+      val.appendChild(document.createTextNode("shows after 2 study days"));
+    } else {
+      var pts = Math.round(t.delta * 100);
+      var dir = pts > 0 ? "up" : (pts < 0 ? "down" : "flat");
+      val.classList.add(dir);
+      var ic = h("span");
+      ic.innerHTML = ICONS[dir === "up" ? "trendingUp" : (dir === "down" ? "trendingDown" : "trendingFlat")] || "";
+      if (ic.firstChild) val.appendChild(ic.firstChild);
+      val.appendChild(document.createTextNode(
+        (pts > 0 ? "+" : "") + pts + " pt" + (Math.abs(pts) === 1 ? "" : "s") + " this week"));
+      var spark = sparkline(t.points);
+      if (spark) val.appendChild(spark);
+    }
+    row.appendChild(val);
+    return row;
+  }
+  // tiny readiness sparkline from the daily snapshots (decorative; trend row
+  // carries the accessible text, so this is aria-hidden)
+  function sparkline(points) {
+    if (!points || points.length < 2) return null;
+    var W = 84, H = 24, PAD = 3;
+    var max = 0;
+    points.forEach(function (p) { if (p.r > max) max = p.r; });
+    if (max <= 0) max = 0.01;
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "spark");
+    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("aria-hidden", "true");
+    var coords = points.map(function (p, i) {
+      var x = PAD + (i / (points.length - 1)) * (W - 2 * PAD);
+      var y = H - PAD - (p.r / max) * (H - 2 * PAD);
+      return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
+    });
+    var line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("class", "spark-line");
+    line.setAttribute("points", coords.map(function (c) { return c.join(","); }).join(" "));
+    svg.appendChild(line);
+    var end = coords[coords.length - 1];
+    var dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("class", "spark-dot");
+    dot.setAttribute("cx", end[0]); dot.setAttribute("cy", end[1]); dot.setAttribute("r", 2.5);
+    svg.appendChild(dot);
+    return svg;
+  }
+  // course-progress row: "Lectures watched · 3 of 102" + neutral bar + caption
+  function courseRow(label, n, total, caption) {
+    var row = h("div", "dbar");
+    row.setAttribute("role", "img");
+    row.setAttribute("aria-label", label + ": " + n + " of " + total + ". " + caption);
+    row.appendChild(h("div", "dbar-lab", label + " · " + n + " of " + total));
+    var pct = total ? Math.round((n / total) * 100) : 0;
+    var bar = h("div", "bar bar-inline");
+    var fill = h("div", "bar-fill");
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+    var wrapB = h("div", "bar-wrap");
+    wrapB.appendChild(bar);
+    wrapB.appendChild(h("span", "bar-pct muted", pct + "%"));
+    row.appendChild(wrapB);
+    row.appendChild(h("div", "muted small", caption));
+    return row;
+  }
+  // two-layer bar: light fill = covered by materials, solid lime = mastered
+  function layeredBar(masteredFrac, coverFrac) {
+    var bar = h("div", "bar bar-inline bar-layered");
+    var cover = h("div", "bar-fill cover");
+    cover.style.width = Math.round(Math.max(0, Math.min(1, coverFrac)) * 100) + "%";
+    bar.appendChild(cover);
+    var mast = h("div", "bar-fill mastered");
+    mast.style.width = Math.round(Math.max(0, Math.min(1, masteredFrac)) * 100) + "%";
+    bar.appendChild(mast);
+    var wrapB = h("div", "bar-wrap");
+    wrapB.appendChild(bar);
+    wrapB.appendChild(h("span", "bar-pct muted", Math.round(masteredFrac * 100) + "%"));
+    return wrapB;
+  }
+  // decision 22: the weakest HEAVY domain gets flagged in a plain sentence.
+  // Three honest states: nothing tried yet / a heavy domain untouched / all
+  // heavy domains tried - steer or maintain depending on how they're holding.
   function weakestNote(dd) {
-    var heavy = dd.filter(function (d) { return d.weight >= 0.2 && d.attempts > 0; });
-    if (!heavy.length) {
+    var heavy = dd.filter(function (d) { return d.weight >= 0.2; });
+    var tried = heavy.filter(function (d) { return d.attempts > 0; });
+    if (!tried.length) {
       return h("p", "flag-note", "No heavy-domain attempts yet. " + DOMAIN_NAME.D2 +
         " is a third of the exam — start your practice there.");
     }
-    heavy.sort(function (a, b) { return a.accuracy - b.accuracy; });
-    var w = heavy[0];
+    var untouched = heavy.filter(function (d) { return d.attempts === 0; })
+      .sort(function (a, b) { return b.weight - a.weight; });
+    if (untouched.length) {
+      var u = untouched[0];
+      return h("p", "flag-note", "You haven't practiced " + u.name + " yet — it's " +
+        Math.round(u.weight * 100) + "% of the exam. Point your next session there.");
+    }
+    tried.sort(function (a, b) { return a.accuracy - b.accuracy; });
+    var w = tried[0];
+    if (w.accuracy >= 0.85) {
+      return h("p", "flag-note ok", "Your heavy domains are holding — the weakest, " + w.name +
+        ", is at " + Math.round(w.accuracy * 100) + "% correct. Keep them warm with mixed practice " +
+        "and put new effort into the smaller domains.");
+    }
     return h("p", "flag-note", "Weakest heavy domain: " + w.name + " (" +
       Math.round(w.weight * 100) + "% of the exam) at " + Math.round(w.accuracy * 100) +
       "% correct. Steer practice time there first.");

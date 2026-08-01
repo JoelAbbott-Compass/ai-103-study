@@ -32,10 +32,11 @@ window.Store = (function () {
     var da = new Date(a[0], a[1] - 1, a[2]), db = new Date(b[0], b[1] - 1, b[2]);
     return Math.round((db - da) / 86400000);
   }
+  function tsToDateStr(ts) { return ts ? todayStr(new Date(ts)) : todayStr(); }
 
   // ---- state --------------------------------------------------------------
   function blank() {
-    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {} };
+    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {}, snapshots: [] };
   }
   var state = load();
 
@@ -71,6 +72,7 @@ window.Store = (function () {
     if (!state.answers[qid]) state.answers[qid] = [];
     state.answers[qid].push({ ts: Date.now(), correct: !!correct, confidence: confidence || "med", domain: domain });
     markStudyDay();
+    snapshot();
     save();
   }
   function lastAnswer(qid) {
@@ -109,6 +111,7 @@ window.Store = (function () {
     s.nextReview = addDays(todayStr(), s.interval);
     state.cards[cid] = s;
     markStudyDay();
+    snapshot();
     save();
     return s;
   }
@@ -223,7 +226,7 @@ window.Store = (function () {
   function mocks() { return state.mocks.slice(); }
   function recordMock(score, total) {
     state.mocks.push({ date: todayStr(), score: score, total: total, pct: Math.round((score / total) * 100) });
-    markStudyDay(); save();
+    markStudyDay(); snapshot(); save();
   }
   function gateStatus() {
     var g = STUDY_DATA.meta.booking_gate;
@@ -252,6 +255,80 @@ window.Store = (function () {
   }
   function daysToExam() { return Math.max(0, daysBetween(todayStr(), STUDY_DATA.meta.exam_date)); }
 
+  // ---- course-anchored metrics --------------------------------------------
+  // An objective is MASTERED when >= 3 different questions tagged to it have
+  // each been answered correctly on their latest attempt, and those latest
+  // correct answers span >= 2 different days (knowledge, not a lucky night).
+  // Definition approved by Joel 2026-08-01.
+  function objectiveStats() {
+    var byObj = {};
+    CONTENT.questions.forEach(function (q) {
+      if (!q.objective) return;
+      if (!byObj[q.objective]) {
+        byObj[q.objective] = { code: q.objective, domain: q.domain, questions: 0, attempted: 0, solid: 0, days: {} };
+      }
+      var o = byObj[q.objective];
+      o.questions++;
+      var la = lastAnswer(q.id);
+      if (la) {
+        o.attempted++;
+        if (la.correct) { o.solid++; o.days[tsToDateStr(la.ts)] = true; }
+      }
+    });
+    return Object.keys(byObj).map(function (k) {
+      var o = byObj[k];
+      o.mastered = o.solid >= 3 && Object.keys(o.days).length >= 2;
+      return o;
+    });
+  }
+  // mastered-objective counts, overall and per domain (of that domain's total)
+  function objectiveProgress() {
+    var perDom = {};
+    STUDY_DATA.domains.forEach(function (d) {
+      perDom[d.id] = { id: d.id, name: d.name, total: d.objectives_total, touched: d.objectives_touched, gaps: d.gaps, mastered: 0 };
+    });
+    var mastered = 0;
+    objectiveStats().forEach(function (o) {
+      if (o.mastered) { mastered++; if (perDom[o.domain]) perDom[o.domain].mastered++; }
+    });
+    var total = STUDY_DATA.domains.reduce(function (s, d) { return s + d.objectives_total; }, 0);
+    return { mastered: mastered, total: total, domains: STUDY_DATA.domains.map(function (d) { return perDom[d.id]; }) };
+  }
+  // whole-course position: lectures watched + objectives mastered
+  function courseProgress() {
+    var sc = STUDY_DATA.schedule, op = objectiveProgress();
+    return {
+      lectures_watched: sc.watched || 0,
+      lectures_total: sc.total_lectures || 0,
+      objectives_mastered: op.mastered,
+      objectives_total: op.total
+    };
+  }
+
+  // ---- readiness history (for the trend display) --------------------------
+  // One snapshot per study day, computed from real state at save time - never
+  // hand-written. Upserted on every study action (answer, card review, mock).
+  function snapshot() {
+    var t = todayStr(), r = readiness();
+    var last = state.snapshots[state.snapshots.length - 1];
+    if (last && last.date === t) last.r = r;
+    else state.snapshots.push({ date: t, r: r });
+  }
+  // current readiness vs ~a week ago: delta + sparkline points
+  function readinessTrend() {
+    var current = readiness();
+    var cutoff = addDays(todayStr(), -7);
+    var base = null;
+    state.snapshots.forEach(function (s) { if (s.date <= cutoff) base = s; });
+    if (!base && state.snapshots.length > 1) base = state.snapshots[0];
+    return {
+      current: current,
+      delta: base ? current - base.r : 0,
+      hasTrend: state.snapshots.length >= 2,
+      points: state.snapshots.slice(-14)
+    };
+  }
+
   // ---- guide lab checklists -------------------------------------------------
   // Per-guide DO-item check state, keyed by item index. Raw interaction data
   // (like answers/cards) - reconciled to the .md sources via Export.
@@ -279,6 +356,8 @@ window.Store = (function () {
     mocks: mocks, recordMock: recordMock, gateStatus: gateStatus,
     guideChecks: guideChecks, toggleGuideCheck: toggleGuideCheck,
     readiness: readiness, paceFactor: paceFactor,
+    objectiveStats: objectiveStats, objectiveProgress: objectiveProgress,
+    courseProgress: courseProgress, readinessTrend: readinessTrend,
     exportJSON: exportJSON, reset: reset
   };
 })();
