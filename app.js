@@ -426,6 +426,18 @@
       if (g) {
         wrap.appendChild(h("h2", "guide-h2", g.title));
         wrap.appendChild(h("div", "muted small", "Objectives: " + g.objectives + " · " + g.source));
+        if (g.video) {
+          var vwrap = h("div", "video-wrap");
+          vwrap.appendChild(h("div", "video-label", "▶ Watch overview"));
+          var vid = document.createElement("video");
+          vid.className = "guide-video";
+          vid.src = g.video;
+          vid.controls = true;
+          vid.preload = "metadata";
+          vid.setAttribute("playsinline", "");     // iOS: play inline, not fullscreen-forced
+          vwrap.appendChild(vid);
+          wrap.appendChild(vwrap);
+        }
         var body = h("div", "guide-body");
         body.innerHTML = g.html;   // trusted, authored by Claude
         wrap.appendChild(body);
