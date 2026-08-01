@@ -36,7 +36,7 @@ window.Store = (function () {
 
   // ---- state --------------------------------------------------------------
   function blank() {
-    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {}, snapshots: [] };
+    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {}, snapshots: [], repairs: [] };
   }
   var state = load();
 
@@ -96,6 +96,32 @@ window.Store = (function () {
       return !s || s.nextReview <= t;
     });
   }
+  // ---- tonight's queue: backlog auto-spread + leech routing ---------------
+  // The visible nightly pile is capped; anything beyond it simply stays due
+  // and surfaces over the next nights (nextReview data is NEVER rewritten -
+  // only presentation softens). Cards failed 3+ times are leeches: they're
+  // routed out of the review queue toward Saturday's lab per the leech rule.
+  var NIGHT_CAP = 15;
+  function isLeech(cid) { var s = state.cards[cid]; return !!s && s.lapses >= 3; }
+  function leeches() { return CONTENT.cards.filter(function (c) { return isLeech(c.id); }); }
+  function tonightQueue() {
+    var t = todayStr();
+    var pool = CONTENT.cards.filter(function (c) {
+      if (isLeech(c.id)) return false;
+      var s = state.cards[c.id];
+      return !s || s.nextReview <= t;
+    });
+    pool.sort(function (a, b) {                     // most behind first, then shakier memory
+      var sa = state.cards[a.id] || { nextReview: t, box: 0 };
+      var sb = state.cards[b.id] || { nextReview: t, box: 0 };
+      if (sa.nextReview !== sb.nextReview) return sa.nextReview < sb.nextReview ? -1 : 1;
+      return sa.box - sb.box;
+    });
+    if (pool.length <= NIGHT_CAP) return { cards: pool, deferred: 0, spreadDays: 0 };
+    var deferred = pool.length - NIGHT_CAP;
+    return { cards: pool.slice(0, NIGHT_CAP), deferred: deferred, spreadDays: Math.ceil(deferred / NIGHT_CAP) };
+  }
+
   function reviewCard(cid, rating) {  // rating: "again" | "hard" | "good"
     var s = state.cards[cid] || { box: 0, interval: 0, nextReview: todayStr(), lapses: 0, learned: null };
     if (!s.learned) s.learned = todayStr();
@@ -121,7 +147,8 @@ window.Store = (function () {
   // preferring your misses and unseen questions, with light interleaving.
   function buildSession(qCount) {
     qCount = qCount || 8;
-    var cards = dueCards();
+    var tq = tonightQueue();
+    var cards = tq.cards;
 
     var weakest = weakestDomain();
     var missSet = {}; misses().forEach(function (q) { missSet[q.id] = true; });
@@ -136,7 +163,7 @@ window.Store = (function () {
     }).sort(function (a, b) { return b.score - a.score; });
 
     var questions = scored.slice(0, qCount).map(function (x) { return x.q; });
-    return { cards: cards, questions: questions, weakest: weakest };
+    return { cards: cards, questions: questions, weakest: weakest, deferred: tq.deferred };
   }
 
   // ---- metrics (derived for the Progress tab) ----------------------------
@@ -189,13 +216,97 @@ window.Store = (function () {
     });
     return pts;
   }
-  function streak() {
-    if (!state.studyDays.length) return 0;
-    var t = todayStr(), n = 0, cursor = t;
-    // streak counts back from today (or yesterday if not studied yet today)
-    if (state.studyDays.indexOf(t) === -1) cursor = addDays(t, -1);
-    while (state.studyDays.indexOf(cursor) !== -1) { n++; cursor = addDays(cursor, -1); }
-    return n;
+  // ---- scheduled-day streak (W2 chunk 6) ----------------------------------
+  // The plan is Mon-Sat; Sunday is an off-day and passes silently. The streak
+  // counts consecutive scheduled days handled: studied, covered by an
+  // auto-granted freeze, or earned back with a repair session. Freezes are
+  // earned (1 when a streak run reaches 3 days, +1 per fully-studied Mon-Sat
+  // week, inventory capped at 2) and consumed automatically overnight.
+  // Everything is DERIVED from studyDays + repairs on every call - no stored
+  // streak or freeze counters that could drift from the honest history.
+  function isScheduled(dateStr) {
+    if (dateStr < STUDY_DATA.meta.study_start) return false;
+    var p = dateStr.split("-").map(Number);
+    return new Date(p[0], p[1] - 1, p[2]).getDay() !== 0; // Sunday = 0
+  }
+  function scheduleWalk() {
+    var t = todayStr(), start = STUDY_DATA.meta.study_start;
+    var states = {};      // date -> studied|repaired|frozen|missed|pending|off|extra
+    var inv = 0, run = 0, grantedAt3 = false, weekAll = true;
+    var studied = {}; state.studyDays.forEach(function (d) { studied[d] = true; });
+    var repaired = {}; (state.repairs || []).forEach(function (r) { repaired[r.covers] = true; });
+    if (t < start) return { states: states, streak: 0, freezes: 0 };
+    for (var d = start; d <= t; d = addDays(d, 1)) {
+      var p = d.split("-").map(Number);
+      var dow = new Date(p[0], p[1] - 1, p[2]).getDay();
+      if (!isScheduled(d)) {
+        states[d] = studied[d] ? "extra" : "off";   // extra study still shows on the calendar
+        continue;
+      }
+      if (studied[d]) {
+        states[d] = "studied";
+        run++;
+        if (run === 3 && !grantedAt3) { inv = Math.min(2, inv + 1); grantedAt3 = true; }
+      } else if (d === t) {
+        states[d] = "pending";                      // tonight isn't a miss until the day ends
+      } else if (repaired[d]) {
+        states[d] = "repaired";                     // earned back; streak preserved, not incremented
+        weekAll = false;
+      } else if (inv > 0) {
+        inv--; states[d] = "frozen";                // freeze consumed silently overnight
+        weekAll = false;
+      } else {
+        states[d] = "missed";
+        run = 0; grantedAt3 = false; weekAll = false;
+      }
+      if (dow === 6) {                              // Saturday closes a Mon-Sat week
+        if (weekAll && d !== t) inv = Math.min(2, inv + 1);
+        weekAll = true;
+      }
+    }
+    return { states: states, streak: run, freezes: inv };
+  }
+  function streak() { return scheduleWalk().streak; }
+  function streakInfo() {
+    var w = scheduleWalk();
+    return {
+      days: w.streak, freezes: w.freezes, repair: repairEligible(),
+      preStart: todayStr() < STUDY_DATA.meta.study_start
+    };
+  }
+  // repair window: the single most recent scheduled day was missed with no
+  // freeze, the miss is <= 2 days old, and the scheduled day before it was OK
+  function repairEligible() {
+    var w = scheduleWalk(), t = todayStr(), start = STUDY_DATA.meta.study_start;
+    var d = addDays(t, -1), hops = 0, miss = null;
+    while (d >= start && hops < 4) {
+      if (isScheduled(d)) { if (w.states[d] === "missed") miss = d; break; }
+      d = addDays(d, -1); hops++;
+    }
+    if (!miss || daysBetween(miss, t) > 2) return null;
+    var prev = addDays(miss, -1), hops2 = 0;
+    while (prev >= start && !isScheduled(prev) && hops2 < 4) { prev = addDays(prev, -1); hops2++; }
+    if (prev >= start && isScheduled(prev) && w.states[prev] === "missed") return null;
+    return { missDate: miss, daysLeft: Math.max(0, 2 - daysBetween(miss, t)) };
+  }
+  // called by the app ONLY when the double-size repair session completes
+  function recordRepair() {
+    var e = repairEligible();
+    if (!e) return false;
+    if (!state.repairs) state.repairs = [];
+    state.repairs.push({ date: todayStr(), covers: e.missDate });
+    save();
+    return true;
+  }
+  // last-N-days calendar states for the Progress grid
+  function calendar(days) {
+    var w = scheduleWalk(), t = todayStr(), out = [];
+    for (var i = days - 1; i >= 0; i--) {
+      var d = addDays(t, -i);
+      var st = w.states[d] || (state.studyDays.indexOf(d) !== -1 ? "extra" : "off");
+      out.push({ date: d, state: st });
+    }
+    return out;
   }
   function studyDaysWindow(days) {
     var out = [], t = todayStr();
@@ -205,21 +316,29 @@ window.Store = (function () {
     }
     return out;
   }
-  // next N days of card reviews (anything already due counts as today)
+  // next N days of card reviews as the app will actually SERVE them:
+  // leeches are out of the pile, anything already due counts as today, and
+  // each night is capped at NIGHT_CAP with the overflow carrying forward -
+  // the same spread the nightly queue applies, so the chart never promises
+  // a pile bigger than a real night.
   function dueForecast(days) {
     var t = todayStr(), counts = {};
     CONTENT.cards.forEach(function (c) {
+      if (isLeech(c.id)) return;
       var s = state.cards[c.id];
       var d = (!s || s.nextReview <= t) ? t : s.nextReview;
       counts[d] = (counts[d] || 0) + 1;
     });
     var names = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-    var out = [];
+    var out = [], carry = 0;
     for (var i = 0; i < days; i++) {
       var d = addDays(t, i);
       var p = d.split("-").map(Number);
       var label = i === 0 ? "Today" : names[new Date(p[0], p[1] - 1, p[2]).getDay()];
-      out.push({ date: d, label: label, due: counts[d] || 0 });
+      var raw = (counts[d] || 0) + carry;
+      var show = Math.min(raw, NIGHT_CAP);
+      carry = raw - show;
+      out.push({ date: d, label: label, due: show });
     }
     return out;
   }
@@ -352,7 +471,9 @@ window.Store = (function () {
     dueCards: dueCards, cardState: cardState, reviewCard: reviewCard, dueForecast: dueForecast,
     buildSession: buildSession, weakestDomain: weakestDomain,
     perDomain: perDomain, cardCounts: cardCounts, calibration: calibration,
-    streak: streak, studyDaysWindow: studyDaysWindow,
+    streak: streak, streakInfo: streakInfo, calendar: calendar,
+    repairEligible: repairEligible, recordRepair: recordRepair,
+    tonightQueue: tonightQueue, leeches: leeches, studyDaysWindow: studyDaysWindow,
     mocks: mocks, recordMock: recordMock, gateStatus: gateStatus,
     guideChecks: guideChecks, toggleGuideCheck: toggleGuideCheck,
     readiness: readiness, paceFactor: paceFactor,

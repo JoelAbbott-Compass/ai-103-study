@@ -49,7 +49,10 @@
     accuracy: { term: "Accuracy and “provisional”", text: "Percent correct on the questions you've answered in each domain - not how much of the domain you've covered. A domain counts nothing toward readiness until you've made 5 attempts and only counts fully at 15, so a lucky handful of answers can't inflate the number. Until then the score is marked provisional." },
     objectives: { term: "Covered vs mastered", text: "The exam is built from 64 specific skills Microsoft publishes, called objectives. Covered means your study materials have taught that skill. Mastered is proven: you've answered at least 3 different questions on it, got each one right on your latest try, and did it across at least 2 different days - so it's knowledge, not one lucky night. A gap is a skill the course skipped; extra material fills it before exam week." },
     trend: { term: "Readiness trend", text: "The app saves your readiness once per study day and compares today with about a week ago. Early on the number itself stays low by design - under 10% before Week 3 is normal - so the direction matters more than the level. A rising line means the work is landing." },
-    calibration: { term: "Confidence vs accuracy", text: "After each practice answer you tag how sure you felt. This compares that feeling with reality. High confidence but wrong is the dangerous mix - those facts feel safe, so you never review them, and the exam room is where they surface. Low confidence but right means you know more than you give yourself credit for." }
+    calibration: { term: "Confidence vs accuracy", text: "After each practice answer you tag how sure you felt. This compares that feeling with reality. High confidence but wrong is the dangerous mix - those facts feel safe, so you never review them, and the exam room is where they surface. Low confidence but right means you know more than you give yourself credit for." },
+    streak: { term: "Streak", text: "Consecutive scheduled study days completed. Your plan is Monday through Saturday, so Sundays pass silently and never break it. A night counts when you do real practice, not when you open the app. Miss a night and a streak freeze covers it automatically overnight - you earn one at day 3 and one for each perfect week, holding up to two. No freeze saved? You get 2 days to earn the streak back with one bigger session." },
+    spread: { term: "Tonight's queue", text: "Reviews pile up when you miss a night, so the app caps tonight at 15 cards and spreads the rest across the coming nights, most-behind cards first. Nothing is dropped and no schedule is rewritten behind your back - the extras simply surface over the next evenings." },
+    leech: { term: "Moved to lab", text: "A card you've gotten wrong 3 times isn't a memorization problem - it's a sign that fact needs hands-on practice. The app routes it out of your review pile and onto Saturday's lab list, where you'll build it instead of memorizing it." }
   };
   // one toggle behavior for both trigger styles; host = the surface the panel
   // opens inside (one panel open per host at a time)
@@ -130,15 +133,36 @@
     var wrap = h("div", "view-home");
     var r = Store.readiness();
     var gate = Store.gateStatus();
-    var cc = Store.cardCounts();
+    var tq = Store.tonightQueue();
+    var si = Store.streakInfo();
 
     var hero = h("div", "hero");
     hero.appendChild(kpi("Days to exam", String(Store.daysToExam()), "Exam week Sep 28", "calendar", "slate"));
     hero.appendChild(ringKpi(r * 100));
-    hero.appendChild(kpi("Cards due", String(cc.due_today), "tonight's review queue", "layers", "orange"));
-    hero.appendChild(kpi("Streak", Store.streak() + " d", "study days in a row", "flame", "lime"));
+    hero.appendChild(kpi("Cards tonight", String(tq.cards.length),
+      tq.deferred ? "+" + tq.deferred + " spread across this week" : "tonight's review queue",
+      "layers", "orange", tq.deferred ? "spread" : null));
+    var streakSub = si.preStart ? "your plan starts Monday"
+      : "scheduled days" + (si.freezes ? " · " + si.freezes + " freeze" + (si.freezes > 1 ? "s" : "") + " saved" : "");
+    hero.appendChild(kpi("Streak", si.days + " d", streakSub, "flame", "lime", "streak"));
     hero.appendChild(gateCard(gate));
     wrap.appendChild(hero);
+
+    // no-shame miss banner: one line + the recovery action, nothing else
+    if (si.repair) {
+      var rb = h("div", "card repair-banner");
+      rb.appendChild(chipIcon("rotateCcw", "orange"));
+      var rtxt = h("div");
+      rtxt.appendChild(h("div", "rb-title", "You missed " + weekdayName(si.repair.missDate) + " — that's data, not failure."));
+      rtxt.appendChild(h("div", "rb-sub muted",
+        "One bigger session (all of tonight's cards + 16 questions) earns the streak back. " +
+        (si.repair.daysLeft === 0 ? "Tonight is the last night to do it." : "You have tonight and tomorrow.")));
+      rb.appendChild(rtxt);
+      var rbtn = h("button", "btn btn-primary", "Earn it back  →");
+      rbtn.onclick = startRepairSession;
+      rb.appendChild(rbtn);
+      wrap.appendChild(rb);
+    }
 
     // Study now
     var sn = h("div", "studynow");
@@ -157,7 +181,7 @@
     // shortcuts
     var grid = h("div", "shortcuts");
     grid.appendChild(shortcut("Practice questions", "Answer, get graded, see why", "practice", "target", "orange"));
-    grid.appendChild(shortcut("Flashcards", cc.due_today + " due today", "cards", "layers", "slate"));
+    grid.appendChild(shortcut("Flashcards", tq.cards.length + " tonight", "cards", "layers", "slate"));
     grid.appendChild(shortcut("Study guides", CONTENT.guides.length + " section(s)", "guides", "bookOpen", "slate"));
     grid.appendChild(shortcut("Timed mock", "Timed, scored, feeds the gate", "practice", "timer", "slate"));
     wrap.appendChild(grid);
@@ -610,6 +634,23 @@
     if (cards.length) runFlashcardDeck(cards, doQuestions);
     else doQuestions();
   }
+  function weekdayName(dateStr) {
+    var p = dateStr.split("-").map(Number);
+    return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date(p[0], p[1] - 1, p[2]).getDay()];
+  }
+  // Earn-Back repair: a double-size session (full card queue + 16 questions);
+  // the repair is recorded ONLY when the whole session completes.
+  function startRepairSession() {
+    var plan = Store.buildSession(16);
+    function doQuestions() {
+      runQuestions(plan.questions, "practice", function (res) {
+        var restored = Store.recordRepair();
+        showSessionDone(res, restored ? "Streak earned back" : "Session complete");
+      });
+    }
+    if (plan.cards.length) runFlashcardDeck(plan.cards, doQuestions);
+    else doQuestions();
+  }
   function showSessionDone(res, title) {
     var wrap = h("div", "card done");
     wrap.appendChild(h("h2", null, title));
@@ -686,7 +727,8 @@
   function renderFlashcards() {
     var wrap = h("div", "view");
     wrap.appendChild(h("h1", null, "Flashcards"));
-    var due = Store.dueCards();
+    var tq = Store.tonightQueue();
+    var lch = Store.leeches();
 
     // deck breakdown: new (never rated) / learning / mature (interval > 21d)
     var counts = { fresh: 0, learning: 0, mature: 0 };
@@ -699,10 +741,15 @@
 
     var deck = h("div", "card deck-hero");
     var top = h("div", "deck-top");
-    top.appendChild(chipIcon("layers", due.length ? "orange" : "lime"));
+    top.appendChild(chipIcon("layers", tq.cards.length ? "orange" : "lime"));
     var nums = h("div");
-    nums.appendChild(h("div", "deck-due", String(due.length)));
-    nums.appendChild(h("div", "deck-due-lab", "due today · " + CONTENT.cards.length + " cards in the deck"));
+    nums.appendChild(h("div", "deck-due", String(tq.cards.length)));
+    var lab = h("div", "deck-due-lab");
+    lab.appendChild(document.createTextNode(tq.deferred
+      ? "tonight — " + tq.deferred + " more spread across this week"
+      : "due tonight · " + CONTENT.cards.length + " cards in the deck"));
+    if (tq.deferred) lab.appendChild(infoBtn("spread", deck));
+    nums.appendChild(lab);
     top.appendChild(nums);
     deck.appendChild(top);
 
@@ -711,6 +758,10 @@
     chips.appendChild(h("span", "stat-chip tone-orange", counts.learning + " learning"));
     chips.appendChild(h("span", "stat-chip tone-lime", counts.mature + " mature"));
     chips.appendChild(infoBtn("stages", deck));
+    if (lch.length) {
+      chips.appendChild(h("span", "stat-chip tone-slate", lch.length + " moved to lab"));
+      chips.appendChild(infoBtn("leech", deck));
+    }
     deck.appendChild(chips);
 
     // 7-day due forecast (spaced repetition made visible)
@@ -733,9 +784,9 @@
     deck.appendChild(h("p", "forecast-cap", "Spaced repetition schedules each card just before you'd forget it — this is your review load for the week."));
 
     var row = h("div", "filters");
-    var b1 = h("button", "btn btn-primary", "Review due (" + due.length + ")");
-    b1.onclick = function () { if (due.length) runFlashcardDeck(due, function () { go("cards"); }); };
-    if (!due.length) b1.disabled = true;
+    var b1 = h("button", "btn btn-primary", "Review tonight (" + tq.cards.length + ")");
+    b1.onclick = function () { if (tq.cards.length) runFlashcardDeck(tq.cards, function () { go("cards"); }); };
+    if (!tq.cards.length) b1.disabled = true;
     row.appendChild(b1);
     var b2 = h("button", "btn", "Review all (" + CONTENT.cards.length + ")");
     b2.onclick = function () { runFlashcardDeck(CONTENT.cards.slice(), function () { go("cards"); }); };
@@ -743,7 +794,7 @@
     deck.appendChild(row);
     wrap.appendChild(deck);
 
-    if (!due.length) wrap.appendChild(emptyState("circleCheck", "All caught up",
+    if (!tq.cards.length) wrap.appendChild(emptyState("circleCheck", "All caught up",
       "Nothing due right now — spaced repetition has scheduled your next review. Use Review all if you want to study ahead.", null));
     mount(wrap);
   }
@@ -792,9 +843,28 @@
       }
       function rate(rating) {
         cleanup();
-        Store.reviewCard(c.id, rating);
+        var s = Store.reviewCard(c.id, rating);
         i++;
+        // leech moment: the 3rd miss routes this card to Saturday's lab -
+        // tell the learner the system is managing difficulty FOR them
+        if (rating === "again" && s.lapses === 3) { showLeechNote(); return; }
         show();
+      }
+      function showLeechNote() {
+        var v = h("div", "runner");
+        var note = h("div", "card leech-note");
+        note.appendChild(chipIcon("listChecks", "slate"));
+        var txt = h("div");
+        txt.appendChild(h("div", "ln-title", "Moved to Saturday's lab"));
+        txt.appendChild(h("p", "ln-sub muted",
+          "You've missed this one 3 times — that's not a memory problem, it's a build-it problem. " +
+          "It's out of your review pile; you'll practice it hands-on instead."));
+        note.appendChild(txt);
+        var cont = h("button", "btn btn-primary", "Continue  →");
+        cont.onclick = function () { show(); };
+        note.appendChild(cont);
+        v.appendChild(note);
+        mount(v);
       }
       function onDocKey(e) {
         if (!revealed) return;
@@ -1303,20 +1373,47 @@
     }
     wrap.appendChild(calsec);
 
-    // streak grid
-    var ssec = section("Study streak (last 30 days)", "flame");
-    var days = Store.studyDaysWindow(30);
-    var studiedCount = days.filter(function (d) { return d.studied; }).length;
-    var grid = h("div", "streak-grid");
-    grid.setAttribute("role", "img");
-    grid.setAttribute("aria-label", "Studied on " + studiedCount + " of the last 30 days");
-    days.forEach(function (d) {
-      var cell = h("div", "streak-cell" + (d.studied ? " on" : ""));
-      cell.title = d.date;
-      grid.appendChild(cell);
-    });
-    ssec.appendChild(grid);
-    ssec.appendChild(h("p", "muted small", "Current streak: " + Store.streak() + " day(s)."));
+    // streak calendar: studied / frozen / repaired / off days all distinct -
+    // the history is never rewritten, so recovery marks stay visible
+    var ssec = section("Study streak (last 30 days)", "flame", "streak");
+    var si2 = Store.streakInfo();
+    if (si2.preStart) {
+      // before the plan starts there is no calendar to show - say so instead
+      // of rendering a month of empty cells
+      ssec.appendChild(emptyState("flame", "Your calendar starts Monday",
+        "Every scheduled study night you complete turns a square green here. Sundays are off-days — they never count against you.", null));
+    } else {
+      var days = Store.calendar(30);
+      var tally = { studied: 0, frozen: 0, repaired: 0 };
+      var CELL_CLASS = { studied: " on", extra: " on", frozen: " frz", repaired: " rep", pending: " pend", off: " offd", missed: "" };
+      var grid = h("div", "streak-grid");
+      grid.setAttribute("role", "img");
+      days.forEach(function (d) {
+        if (d.state === "studied" || d.state === "extra") tally.studied++;
+        if (d.state === "frozen") tally.frozen++;
+        if (d.state === "repaired") tally.repaired++;
+        var cell = h("div", "streak-cell" + (CELL_CLASS[d.state] || ""));
+        cell.title = d.date + " · " + d.state;
+        grid.appendChild(cell);
+      });
+      grid.setAttribute("aria-label", "Last 30 days: studied on " + tally.studied +
+        (tally.frozen ? ", " + tally.frozen + " covered by a streak freeze" : "") +
+        (tally.repaired ? ", " + tally.repaired + " earned back" : ""));
+      ssec.appendChild(grid);
+      // designed legend: swatch chips, not a wall of text
+      var leg = h("div", "cal-legend");
+      [["on", "Studied"], ["frz", "Freeze covered it"], ["rep", "Earned back"], ["offd", "Off-day"]].forEach(function (k) {
+        var item = h("span", "cal-key");
+        item.appendChild(h("span", "streak-cell cal-swatch " + k[0]));
+        item.appendChild(h("span", "cal-key-lab", k[1]));
+        leg.appendChild(item);
+      });
+      ssec.appendChild(leg);
+      ssec.appendChild(h("p", "muted small",
+        "Current streak: " + si2.days + " scheduled day" + (si2.days === 1 ? "" : "s") +
+        (si2.freezes ? " · " + si2.freezes + " freeze" + (si2.freezes > 1 ? "s" : "") + " saved" : "") +
+        " · Sundays never count against you."));
+    }
     wrap.appendChild(ssec);
 
     // mock trend
