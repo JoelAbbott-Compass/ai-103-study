@@ -35,7 +35,7 @@ window.Store = (function () {
 
   // ---- state --------------------------------------------------------------
   function blank() {
-    return { answers: {}, cards: {}, mocks: [], studyDays: [] };
+    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {} };
   }
   var state = load();
 
@@ -252,6 +252,17 @@ window.Store = (function () {
   }
   function daysToExam() { return Math.max(0, daysBetween(todayStr(), STUDY_DATA.meta.exam_date)); }
 
+  // ---- guide lab checklists -------------------------------------------------
+  // Per-guide DO-item check state, keyed by item index. Raw interaction data
+  // (like answers/cards) - reconciled to the .md sources via Export.
+  function guideChecks(gid) { return state.guides[gid] || {}; }
+  function toggleGuideCheck(gid, idx) {
+    if (!state.guides[gid]) state.guides[gid] = {};
+    state.guides[gid][idx] = !state.guides[gid][idx];
+    save();
+    return !!state.guides[gid][idx];
+  }
+
   // ---- export / reset -----------------------------------------------------
   function exportJSON() {
     return JSON.stringify({ exported: todayStr(), state: state }, null, 2);
@@ -266,6 +277,7 @@ window.Store = (function () {
     perDomain: perDomain, cardCounts: cardCounts, calibration: calibration,
     streak: streak, studyDaysWindow: studyDaysWindow,
     mocks: mocks, recordMock: recordMock, gateStatus: gateStatus,
+    guideChecks: guideChecks, toggleGuideCheck: toggleGuideCheck,
     readiness: readiness, paceFactor: paceFactor,
     exportJSON: exportJSON, reset: reset
   };

@@ -159,6 +159,9 @@
     grid.appendChild(shortcut("Timed mock", "Timed, scored, feeds the gate", "practice", "timer", "slate"));
     wrap.appendChild(grid);
 
+    var vs = videoShelf();
+    if (vs) wrap.appendChild(vs);
+
     var band = courseBand();
     if (band) wrap.appendChild(band);
     wrap.appendChild(whatYoullLearn());
@@ -794,49 +797,263 @@
   }
 
   // ---- GUIDES -------------------------------------------------------------
+  // Designed reading surface (W1 chunk 4). Guides arrive as structured
+  // sections from build_content.js; each kind gets its own component:
+  // Pareto key-points panel, trap callouts, MEMORIZE rows linked to real
+  // cards, a persisted DO checklist, sticky in-page nav, and a section quiz.
+  function guideQuestions(g) {
+    if (!g.codes || !g.codes.length) return [];
+    return CONTENT.questions.filter(function (q) { return g.codes.indexOf(q.objective) !== -1; });
+  }
+  function doKey(secKey, idx) { return secKey + ":" + idx; }
+  function guideDoStats(g) {
+    var total = 0;
+    (g.sections || []).forEach(function (s) { if (s.kind === "do" && s.items) total += s.items.length; });
+    if (!total) return null;
+    var checks = Store.guideChecks(g.id), done = 0;
+    Object.keys(checks).forEach(function (k) { if (checks[k]) done++; });
+    return { done: Math.min(done, total), total: total };
+  }
+  var SEC_ICON = {
+    pareto: ["target", "orange"], concepts: ["bookOpen", "slate"],
+    diagram: ["compass", "slate"], memorize: ["layers", "orange"],
+    do: ["listChecks", "lime"], gotchas: ["triangleAlert", "orange"],
+    verify: ["circleAlert", "slate"], other: ["bookOpen", "slate"]
+  };
+
   function renderGuides() {
     var wrap = h("div", "view");
-    wrap.appendChild(h("h1", null, "Study guides"));
     var gid = location.hash.slice(1).split("/")[1];
     if (!gid) {
+      wrap.appendChild(h("h1", null, "Study guides"));
       var list = h("div", "guide-list");
       CONTENT.guides.forEach(function (g) {
         var c = h("button", "guide-item");
-        c.appendChild(h("div", "gi-title", g.title));
-        c.appendChild(h("div", "gi-sub muted", "Objectives: " + g.objectives));
-        c.appendChild(h("div", "gi-sub muted", g.source));
+        c.appendChild(chipIcon("bookOpen", "slate"));
+        var txt = h("div", "gi-txt");
+        txt.appendChild(h("div", "gi-title", g.title));
+        txt.appendChild(h("div", "gi-sub muted", g.minutes + " min read"));
+        if (g.description) txt.appendChild(h("p", "gi-desc", g.description));
+        var badges = h("div", "gi-badges");
+        if (g.video) badges.appendChild(gBadge("play", "Video overview", "orange"));
+        var qn = guideQuestions(g).length;
+        if (qn) badges.appendChild(gBadge("target", qn + " questions", "slate"));
+        var ds = guideDoStats(g);
+        if (ds) badges.appendChild(gBadge("listChecks", "Lab " + ds.done + "/" + ds.total,
+          ds.done === ds.total ? "lime" : "slate"));
+        txt.appendChild(badges);
+        c.appendChild(txt);
+        var chev = h("span", "gi-chev");
+        chev.innerHTML = (window.ICONS && ICONS.chevronRight) || "";
+        c.appendChild(chev);
         c.onclick = function () { location.hash = "#guides/" + g.id; };
         list.appendChild(c);
       });
       wrap.appendChild(list);
-    } else {
-      var g = CONTENT.guides.filter(function (x) { return x.id === gid; })[0];
-      var back = h("button", "btn", "← All guides"); back.onclick = function () { go("guides"); };
-      wrap.appendChild(back);
-      if (g) {
-        wrap.appendChild(h("h2", "guide-h2", g.title));
-        wrap.appendChild(h("div", "muted small", "Objectives: " + g.objectives + " · " + g.source));
-        if (g.video) {
-          var vwrap = h("div", "video-wrap");
-          var vlab = h("div", "video-label");
-          vlab.innerHTML = (window.ICONS && ICONS.play) || "";
-          vlab.appendChild(document.createTextNode("Watch overview"));
-          vwrap.appendChild(vlab);
-          var vid = document.createElement("video");
-          vid.className = "guide-video";
-          vid.src = g.video;
-          vid.controls = true;
-          vid.preload = "metadata";
-          vid.setAttribute("playsinline", "");     // iOS: play inline, not fullscreen-forced
-          vwrap.appendChild(vid);
-          wrap.appendChild(vwrap);
-        }
-        var body = h("div", "guide-body");
-        body.innerHTML = g.html;   // trusted, authored by Claude
-        wrap.appendChild(body);
-      }
+      mount(wrap);
+      return;
     }
+
+    var g = CONTENT.guides.filter(function (x) { return x.id === gid; })[0];
+    var back = h("button", "btn", "← All guides"); back.onclick = function () { go("guides"); };
+    wrap.appendChild(back);
+    if (!g) { mount(wrap); return; }
+
+    wrap.appendChild(h("h2", "guide-h2", g.title));
+    wrap.appendChild(h("div", "gmeta muted small", g.minutes + " min read"));
+    if (g.description) wrap.appendChild(h("p", "gdesc", g.description));
+
+    // quiz on exactly this guide's exam objectives
+    var qs = guideQuestions(g);
+    var quiz = h("button", "btn btn-primary quizme");
+    quiz.innerHTML = (window.ICONS && ICONS.target) || "";
+    quiz.appendChild(document.createTextNode(qs.length
+      ? "Quiz me on this section · " + qs.length + " questions"
+      : "No questions for this section yet"));
+    if (qs.length) {
+      quiz.onclick = function () {
+        runQuestions(shuffleStable(qs), "practice", function (r) { showSessionDone(r, "Section quiz complete"); });
+      };
+    } else { quiz.disabled = true; }
+    wrap.appendChild(quiz);
+
+    if (g.video) wrap.appendChild(videoBlock(g));
+
+    // sticky "On this page" nav
+    var secs = g.sections || [];
+    if (secs.length > 1) {
+      var toc = h("nav", "toc");
+      toc.setAttribute("aria-label", "On this page");
+      secs.forEach(function (s) {
+        var b = h("button", "toc-btn", s.label || s.title || "Section");
+        b.onclick = function () {
+          var el = document.getElementById("gsec_" + s.key);
+          if (el) el.scrollIntoView({
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+            block: "start"
+          });
+        };
+        toc.appendChild(b);
+      });
+      wrap.appendChild(toc);
+    }
+
+    secs.forEach(function (s) { wrap.appendChild(guideSection(g, s)); });
+    // provenance footer: accuracy tracing stays visible, out of the reading flow
+    if (g.source) wrap.appendChild(h("p", "gfoot muted small", "Sources: " + g.source));
     mount(wrap);
+  }
+  function gBadge(iconKey, label, tone) {
+    var b = h("span", "gbadge tone-" + tone);
+    b.innerHTML = (window.ICONS && ICONS[iconKey]) || "";
+    b.appendChild(document.createTextNode(label));
+    return b;
+  }
+
+  function guideSection(g, s) {
+    var box = h("section", "gsec gsec-" + s.kind);
+    box.id = "gsec_" + s.key;
+    var icon = SEC_ICON[s.kind] || SEC_ICON.other;
+
+    var head = h("button", "gsec-head");
+    head.setAttribute("aria-expanded", "true");
+    head.appendChild(chipIcon(icon[0], icon[1]));
+    head.appendChild(h("span", "gsec-title", s.title || s.label || "Section"));
+    var chev = h("span", "gsec-chev");
+    chev.innerHTML = (window.ICONS && ICONS.chevronRight) || "";
+    head.appendChild(chev);
+    head.onclick = function () {
+      var closed = box.classList.toggle("closed");
+      head.setAttribute("aria-expanded", closed ? "false" : "true");
+    };
+    box.appendChild(head);
+
+    var body = h("div", "gsec-body");
+    box.appendChild(body);
+
+    if (s.kind === "pareto") {
+      var ul = h("ul", "pareto-list");
+      (s.items || []).forEach(function (it) {
+        var li = h("li"); li.innerHTML = it; ul.appendChild(li);
+      });
+      body.appendChild(ul);
+    } else if (s.kind === "gotchas") {
+      (s.items || []).forEach(function (it) {
+        var row = h("div", "trap-row");
+        var ic = h("span", "trap-ic"); ic.innerHTML = (window.ICONS && ICONS.triangleAlert) || "";
+        row.appendChild(ic);
+        var t = h("div"); t.innerHTML = it; row.appendChild(t);
+        body.appendChild(row);
+      });
+    } else if (s.kind === "memorize") {
+      if (s.note) { var n = h("div", "muted small gsec-note"); n.innerHTML = s.note; body.appendChild(n); }
+      (s.items || []).forEach(function (it) {
+        var row = h("div", "mem-row");
+        var ic = h("span", "mem-ic"); ic.innerHTML = (window.ICONS && ICONS.layers) || "";
+        row.appendChild(ic);
+        var t = h("div"); t.innerHTML = it; row.appendChild(t);
+        body.appendChild(row);
+      });
+      if (s.cardIds && s.cardIds.length) {
+        var rb = h("button", "btn review-cards", "Review these " + s.cardIds.length + " flashcards");
+        rb.onclick = function () { go("cards"); };
+        body.appendChild(rb);
+      }
+    } else if (s.kind === "do") {
+      if (s.note) { var n2 = h("div", "muted small gsec-note"); n2.innerHTML = s.note; body.appendChild(n2); }
+      var count = h("div", "do-count muted small");
+      function refreshCount() {
+        var ds = guideDoStats(g);
+        count.textContent = ds ? ds.done + " of " + ds.total + " done — hands-on beats rereading" : "";
+      }
+      (s.items || []).forEach(function (it, idx) {
+        var key = doKey(s.key, idx);
+        var on0 = !!Store.guideChecks(g.id)[key];
+        var row = h("button", "do-row" + (on0 ? " done" : ""));
+        row.setAttribute("aria-pressed", on0 ? "true" : "false");
+        var boxIc = h("span", "do-box");
+        boxIc.innerHTML = (window.ICONS && ICONS.check) || "";
+        row.appendChild(boxIc);
+        var t = h("div"); t.innerHTML = it; row.appendChild(t);
+        row.onclick = function () {
+          var on = Store.toggleGuideCheck(g.id, key);
+          row.classList.toggle("done", on);
+          row.setAttribute("aria-pressed", on ? "true" : "false");
+          refreshCount();
+        };
+        body.appendChild(row);
+      });
+      body.appendChild(count);
+      refreshCount();
+    } else if (s.kind === "diagram") {
+      var dw = h("div", "dg-scroll");
+      dw.innerHTML = s.svg || s.html || "";   // trusted, authored in this repo
+      body.appendChild(dw);
+    } else {
+      var pr = h("div", "guide-prose");
+      pr.innerHTML = s.html || "";            // trusted, authored in this repo
+      body.appendChild(pr);
+    }
+    return box;
+  }
+
+  function videoBlock(g) {
+    var vwrap = h("div", "video-wrap");
+    var vlab = h("div", "video-label");
+    vlab.innerHTML = (window.ICONS && ICONS.play) || "";
+    vlab.appendChild(document.createTextNode("Watch overview"));
+    vwrap.appendChild(vlab);
+    var stage = h("div", "video-stage");
+    var vid = document.createElement("video");
+    vid.className = "guide-video";
+    vid.src = g.video;
+    vid.controls = true;
+    vid.preload = "metadata";
+    vid.setAttribute("playsinline", "");       // iOS: play inline, not fullscreen-forced
+    stage.appendChild(vid);
+    var load = h("div", "vid-load");
+    load.appendChild(compassSpinner());
+    load.style.display = "none";
+    stage.appendChild(load);
+    vid.addEventListener("waiting", function () { load.style.display = "flex"; });
+    ["playing", "canplay", "pause", "error", "seeked"].forEach(function (ev) {
+      vid.addEventListener(ev, function () { load.style.display = "none"; });
+    });
+    vwrap.appendChild(stage);
+    return vwrap;
+  }
+  // the app's single decorative brand flourish: a settling compass needle
+  function compassSpinner() {
+    var s = h("div", "cspin");
+    s.setAttribute("role", "status");
+    s.setAttribute("aria-label", "Loading");
+    s.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<circle class="cspin-ring" cx="12" cy="12" r="10"/>' +
+      '<g class="cspin-needle"><path class="cspin-n" d="M12 4.4 L14 12 L10 12 Z"/>' +
+      '<path class="cspin-s" d="M12 19.6 L10 12 L14 12 Z"/></g>' +
+      '<circle class="cspin-hub" cx="12" cy="12" r="1.4"/></svg>';
+    return s;
+  }
+  // Home: every guide that has a narrated overview, one tap away
+  function videoShelf() {
+    var vids = CONTENT.guides.filter(function (g) { return g.video; });
+    if (!vids.length) return null;
+    var sec = h("div", "vshelf");
+    sec.appendChild(h("h2", null, "Watch overviews"));
+    var row = h("div", "vshelf-row");
+    vids.forEach(function (g) {
+      var c = h("button", "vcard");
+      c.appendChild(chipIcon("play", "orange"));
+      var t = h("div");
+      t.appendChild(h("div", "sc-title", g.title));
+      t.appendChild(h("div", "sc-sub muted", "Narrated video · " + g.minutes + " min guide"));
+      c.appendChild(t);
+      c.onclick = function () { location.hash = "#guides/" + g.id; };
+      row.appendChild(c);
+    });
+    sec.appendChild(row);
+    return sec;
   }
 
   // ---- TIMED MOCK (a mode inside Practice) ---------------------------------
