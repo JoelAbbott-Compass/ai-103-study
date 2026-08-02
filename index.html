@@ -230,12 +230,106 @@
   .ph-trend-val.up{color:var(--lime-text);}
   .ph-trend-val.flat, .ph-trend-val.down{color:var(--n500);}
 
-  /* Study-now panel (solid onyx, no gradient) */
-  .studynow{background:var(--slate);color:#fff;border-radius:var(--radius);
-      padding:24px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;
-      flex-wrap:wrap;gap:16px;}
-  .studynow h2{color:#fff;margin:0 0 4px;}
-  .studynow .muted{color:rgba(255,255,255,.75);}
+  /* ==========================================================================
+     COLOR LAYERING RULE (Joel 2026-08-01): dark FEATURE panels layer
+     onyx (outer surface) -> slate (inner boxes) -> orange (primary action).
+     The masthead already follows it (onyx band, slate nav + chip). Content /
+     reading surfaces stay white cards. On dark: white text + orange icons.
+     .dark-panel carries the shared recolors for anything on an onyx surface.
+     ========================================================================== */
+  /* every dark panel carries the compass mark as a quiet watermark, same
+     treatment as the page watermark: asset untouched, opacity lives here.
+     ::before + absolute so it sits BEHIND the slate inner boxes and never
+     becomes a flex item. */
+  /* WATERMARK STANDARD (reusable): fixed size + right-center anchor so the
+     mark sits in the SAME place in every box and stays recognizable (never
+     scaled to a blur). isolation + negative z-index: it paints above the
+     panel surface but BELOW the slate inner boxes - depth, not a stain.
+     Variant pairing: color mark on onyx panels, white mark on orange panels. */
+  .dark-panel{position:relative;overflow:hidden;isolation:isolate;}
+  .dark-panel::before,.panel-orange::before{content:"";position:absolute;
+      right:-64px;top:50%;transform:translateY(-50%);
+      width:300px;height:352px;pointer-events:none;z-index:-1;
+      background:url("compass-mark.svg") no-repeat center/contain;opacity:.1;}
+  /* ORANGE SHOWCASE PANEL (reusable): Compass orange surface, onyx lettering
+     (white body text fails AA on orange), WHITE compass mark watermark. */
+  .panel-orange{position:relative;overflow:hidden;isolation:isolate;
+      background:var(--orange);color:var(--onyx);
+      border-radius:var(--radius);padding:24px;}
+  .panel-orange::before{background-image:url("compass-mark-white.svg");opacity:.16;}
+  .po-kicker{font-family:var(--font-head);font-weight:600;font-size:11px;
+      letter-spacing:.06em;text-transform:uppercase;
+      color:color-mix(in srgb, var(--onyx) 75%, var(--orange));margin-bottom:4px;}
+  .po-title{font-family:var(--font-head);font-weight:700;font-size:var(--fs-25);
+      color:var(--onyx);margin:0 0 12px;}
+  .dark-panel .muted{color:rgba(255,255,255,.75);}
+  .dark-panel .info-btn{color:rgba(255,255,255,.65);}
+  .dark-panel .info-btn:hover,.dark-panel .info-btn[aria-expanded="true"]{
+      color:#fff;background:rgba(255,255,255,.12);}
+  .dark-panel .explain{background:rgba(255,255,255,.1);border-left-color:var(--orange);
+      color:rgba(255,255,255,.85);}
+  .dark-panel .explain-term{color:#fff;}
+  /* slate inner box on an onyx panel */
+  .panel-inner{background:var(--slate);border-radius:12px;padding:12px 14px;margin:14px 0;}
+
+  /* ==========================================================================
+     TONIGHT PANEL (W2 chunk 7) - onyx outer, slate quest rows, orange action
+     ========================================================================== */
+  .studynow{background:var(--onyx);color:#fff;border-radius:var(--radius);
+      padding:24px;margin-bottom:24px;display:flex;align-items:flex-start;
+      flex-wrap:wrap;gap:8px 24px;}
+  .studynow h2{color:#fff;margin:0;}
+  .sn-main{flex:1;min-width:240px;display:flex;flex-direction:column;gap:8px;}
+  .sn-headrow{display:flex;align-items:center;gap:4px;margin-bottom:4px;}
+  .sn-note{margin:0 0 2px;font-size:var(--fs-13);color:rgba(255,255,255,.75);}
+  .sn-side{display:flex;align-items:center;justify-content:center;margin:0 auto;}
+  .sn-start{flex-basis:100%;margin-top:14px;align-self:flex-start;}
+  /* quest rows: slate inner boxes, every row launches its work */
+  .quest-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+      background:var(--slate);border:1px solid rgba(255,255,255,.08);
+      border-radius:var(--radius-btn);padding:10px 14px;min-height:48px;
+      color:#fff;font-size:var(--fs-16);font-family:var(--font);cursor:pointer;}
+  .quest-row:hover{border-color:rgba(255,255,255,.35);}
+  .quest-ic{display:flex;flex:none;color:var(--orange);}
+  .quest-ic .icon{width:19px;height:19px;}
+  .quest-lab{flex:1;min-width:0;font-weight:700;}
+  .quest-status{flex:none;display:inline-flex;align-items:center;gap:6px;
+      font-size:var(--fs-13);color:rgba(255,255,255,.65);font-variant-numeric:tabular-nums;}
+  .quest-status.done{color:var(--lime);font-weight:700;}
+  .quest-status .icon{width:17px;height:17px;}
+  .quest-row.bonus{background:transparent;border-style:dashed;border-color:rgba(255,255,255,.2);}
+  .bonus-x{background:transparent;border:none;cursor:pointer;flex:none;
+      color:rgba(255,255,255,.55);width:32px;height:32px;border-radius:99px;
+      display:inline-flex;align-items:center;justify-content:center;padding:0;}
+  .bonus-x:hover{color:#fff;background:rgba(255,255,255,.12);}
+  .bonus-x .icon{width:16px;height:16px;}
+  /* the guide quest's "mark reviewed" check control */
+  .guide-check{background:transparent;border:2px solid rgba(255,255,255,.35);
+      border-radius:7px;cursor:pointer;flex:none;width:28px;height:28px;
+      display:inline-flex;align-items:center;justify-content:center;padding:0;
+      color:transparent;position:relative;}
+  .guide-check::after{content:"";position:absolute;inset:-8px;} /* 44px touch target */
+  .guide-check:hover{border-color:rgba(255,255,255,.7);}
+  .guide-check.on{background:var(--lime);border-color:var(--lime);color:var(--onyx);}
+  .guide-check .icon{width:16px;height:16px;}
+  /* tonight-ring: same ring component, recolored for the onyx surface */
+  .quest-ringbox .ring-track{stroke:color-mix(in srgb, #fff 20%, var(--onyx));}
+  .quest-ringbox .ring-val{color:#fff;font-size:var(--fs-20);}
+  .quest-ringbox .ring-sub{color:rgba(255,255,255,.65);}
+  /* Mon-Sat week strip */
+  .weekstrip{flex-basis:100%;display:flex;gap:10px;margin-top:12px;
+      padding-top:14px;border-top:1px solid rgba(255,255,255,.12);}
+  .ws-day{display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .ws-cell{width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.1);}
+  .ws-cell.done{background:var(--lime);}
+  .ws-cell.frz{background:color-mix(in srgb, #fff 45%, var(--onyx));}
+  .ws-cell.rep{background:transparent;box-shadow:inset 0 0 0 2px var(--lime);}
+  .ws-cell.pend{background:transparent;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.6);}
+  .ws-cell.miss{background:rgba(255,255,255,.16);}
+  .ws-cell.fut{background:rgba(255,255,255,.07);}
+  .ws-cell.off{background:rgba(255,255,255,.07);transform:scale(.45);border-radius:50%;}
+  .ws-lab{font-family:var(--font-head);font-weight:600;font-size:11px;
+      letter-spacing:.04em;color:rgba(255,255,255,.6);}
 
   .shortcuts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;}
   .shortcut{text-align:left;background:#fff;border:1px solid var(--n200);border-radius:var(--radius);
@@ -324,6 +418,9 @@
   /* ==========================================================================
      FLASHCARDS
      ========================================================================== */
+  /* onyx stage around the flip card (layering rule: feature stages = onyx) */
+  .fc-wrap{background:var(--onyx);border-radius:var(--radius);padding:20px 16px;
+      max-width:720px;margin:0 auto;}
   /* full-stage 3D flip: perspective parent, preserve-3d inner, two stacked faces */
   .fc-stage{perspective:1000px;max-width:640px;margin:0 auto;cursor:pointer;
       -webkit-tap-highlight-color:transparent;}
@@ -334,13 +431,15 @@
   .fc-inner.flipped{transform:rotateY(180deg);}
   .fc-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
       background:#fff;border:1px solid var(--n200);border-radius:var(--radius);
+      border-top:4px solid var(--orange);
       padding:24px;display:flex;flex-direction:column;justify-content:center;
       text-align:center;overflow-y:auto;}
-  .fc-face.back{transform:rotateY(180deg);}
+  .fc-face.back{transform:rotateY(180deg);border-top-color:var(--lime);}
   .fc-front{font-size:var(--fs-20);font-weight:700;line-height:1.4;font-family:var(--font-head);}
   .fc-back-text{font-size:var(--fs-16);line-height:1.55;color:var(--slate);}
-  .fc-hint{text-align:center;margin-top:10px;font-size:var(--fs-13);color:var(--n500);}
-  .fc-actions{display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap;}
+  .fc-hint{text-align:center;margin-top:12px;font-size:var(--fs-13);color:rgba(255,255,255,.6);}
+  .fc-actions{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;}
+  .fc-actions:empty{margin-top:0;}
   .rate-again{color:var(--slate);} .rate-hard{color:var(--orange-dark);} .rate-good{color:var(--lime-text);}
 
   /* ==========================================================================
@@ -351,6 +450,8 @@
       border:1px solid var(--n200);border-radius:var(--radius);
       padding:16px;cursor:pointer;font-size:var(--fs-16);color:var(--onyx);}
   .guide-item:hover{border-color:var(--orange);}
+  /* guide cards join the layering language: slate chip, orange icon */
+  .guide-item .chip.tone-slate{background:var(--slate);color:var(--orange);}
   .gi-txt{flex:1;min-width:0;}
   .gi-title{font-family:var(--font-head);font-weight:700;font-size:var(--fs-16);}
   .gi-sub{font-size:var(--fs-13);margin-top:2px;}
@@ -488,6 +589,10 @@
   .ring-track{stroke:var(--n200);}
   .ring-prog{stroke:var(--orange);}
   .ring-prog.hit{stroke:var(--lime);}          /* target reached: brand green */
+  /* compass-dial detail (reusable): cardinal ticks at 12/3/6/9 o'clock make
+     every progress ring a quiet play on the compass mark */
+  .ring-card{stroke:var(--n300);stroke-width:2;}
+  .quest-ringbox .ring-card,.prog-hero .ring-card{stroke:rgba(255,255,255,.35);}
   /* the 85% goal marker: onyx, extends past the track, labeled on large rings */
   .ring-tick{stroke:var(--onyx);stroke-width:2.5;}
   .ring-tick-label{font-family:var(--font-head);font-weight:600;font-size:11px;
@@ -503,17 +608,49 @@
   .ring-sm .ring-val{font-size:var(--fs-16);}
   .kpi-ring-row{display:flex;margin:6px 0 4px;}
 
-  /* Progress hero: ring + subordinate stats */
+  /* Progress hero: the flagship progress box joins the layering rule -
+     onyx surface, compass-dial ring, watermark via .dark-panel */
   .prog-hero{display:flex;gap:24px;align-items:center;flex-wrap:wrap;
-      padding:24px;margin-bottom:24px;}
+      padding:24px;margin-bottom:24px;background:var(--onyx);color:#fff;
+      border-radius:var(--radius);}
   .prog-hero .explain{flex-basis:100%;margin-bottom:0;}
+  .prog-hero .ring-track{stroke:color-mix(in srgb, #fff 20%, var(--onyx));}
+  .prog-hero .ring-val{color:#fff;}
+  .prog-hero .ring-sub{color:rgba(255,255,255,.65);}
+  .prog-hero .ring-tick{stroke:#fff;}
+  .prog-hero .ring-tick-label{fill:rgba(255,255,255,.7);}
+  .prog-hero .how-btn{color:rgba(255,255,255,.75);}
+  .prog-hero .how-btn:hover,.prog-hero .how-btn[aria-expanded="true"]{
+      background:rgba(255,255,255,.12);}
+  .prog-hero .flag-note{background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);}
+  .prog-hero .ph-trend-val.up{color:var(--lime);}
+  .prog-hero .ph-trend-val.flat,.prog-hero .ph-trend-val.down{color:rgba(255,255,255,.65);}
   .ph-stats{flex:1;min-width:220px;display:flex;flex-direction:column;gap:10px;}
   .ph-stat{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
-      border-bottom:1px solid var(--n100);padding-bottom:8px;}
+      border-bottom:1px solid rgba(255,255,255,.12);padding-bottom:8px;}
   .ph-label{font-family:var(--font-head);font-weight:600;font-size:11px;
-      text-transform:uppercase;letter-spacing:.06em;color:var(--slate);}
-  .ph-val{font-weight:700;font-variant-numeric:tabular-nums;text-align:right;}
+      text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.6);}
+  .ph-val{font-weight:700;font-variant-numeric:tabular-nums;text-align:right;color:#fff;}
   .ph-note{margin:2px 0 0;}
+
+  /* 8-week milestone map (W2 chunk 7): phase rows of week cells - the road to
+     exam week in chunks, never one long demoralizing bar */
+  .plan-card{padding:18px 16px 14px;}
+  .plan-phase{display:flex;align-items:center;gap:14px;padding:9px 0;
+      border-bottom:1px solid var(--n100);flex-wrap:wrap;}
+  .plan-phase:last-of-type{border-bottom:none;}
+  .plan-lab{font-family:var(--font-head);font-weight:600;font-size:var(--fs-13);
+      letter-spacing:.02em;color:var(--slate);flex:1;min-width:150px;}
+  .plan-weeks{display:flex;gap:6px;flex-wrap:wrap;}
+  .pw-cell{display:inline-flex;align-items:center;justify-content:center;
+      min-width:38px;height:28px;padding:0 8px;border-radius:8px;
+      font-family:var(--font-head);font-weight:600;font-size:var(--fs-13);
+      letter-spacing:.03em;font-variant-numeric:tabular-nums;}
+  .pw-cell.past{background:var(--slate-bg);color:var(--slate);}
+  .pw-cell.current{background:var(--orange);color:var(--onyx);}
+  .pw-cell.future{background:#fff;border:1px solid var(--n200);color:var(--n500);}
+  .pw-cell.pw-exam{background:var(--onyx);color:#fff;}
+  .plan-cap{margin:12px 0 0;}
 
   /* direct-labeled domain bars (decision 22): name left, value right, no legend */
   .dom-row{margin:14px 0;}
@@ -535,25 +672,51 @@
   .sh-icon{display:inline-flex;color:var(--orange-dark);}
   .sh-icon .icon{width:18px;height:18px;}
 
-  /* Flashcards deck hero */
-  .deck-hero{margin:16px 0;padding:20px;}
+  /* Flashcards deck hero - onyx outer, slate inner boxes (layering rule) */
+  .deck-hero{margin:16px 0;padding:20px;background:var(--onyx);color:#fff;
+      border-radius:var(--radius);}
   .deck-top{display:flex;align-items:center;gap:14px;}
   .deck-top .chip{width:44px;height:44px;border-radius:10px;}
   .deck-top .chip .icon{width:24px;height:24px;}
-  .deck-due{font-weight:700;font-size:var(--fs-39);line-height:1;font-variant-numeric:tabular-nums;}
-  .deck-due-lab{font-size:var(--fs-13);color:var(--n500);}
+  .deck-due{font-weight:700;font-size:var(--fs-39);line-height:1;font-variant-numeric:tabular-nums;color:#fff;}
+  .deck-due-lab{font-size:var(--fs-13);color:rgba(255,255,255,.65);}
   .stat-chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;}
   .stat-chip{display:inline-flex;align-items:center;gap:6px;border-radius:99px;
       padding:6px 12px;font-size:var(--fs-13);font-weight:700;font-variant-numeric:tabular-nums;}
+  /* on the onyx hero: slate chips, white text, a small brand dot carries tone */
+  .deck-hero .stat-chip{background:var(--slate);color:#fff;}
+  .deck-hero .stat-chip::before{content:"";width:8px;height:8px;border-radius:2px;flex:none;}
+  .deck-hero .stat-chip.tone-slate::before{background:color-mix(in srgb, #fff 45%, var(--slate));}
+  .deck-hero .stat-chip.tone-orange::before{background:var(--orange);}
+  .deck-hero .stat-chip.tone-lime::before{background:var(--lime);}
 
-  /* 7-day due forecast mini chart */
-  .forecast{display:flex;gap:8px;align-items:flex-end;max-width:420px;margin:16px 0 4px;}
-  .fcol{flex:1;text-align:center;font-size:var(--fs-13);color:var(--n500);font-variant-numeric:tabular-nums;}
-  .fcol-n{font-weight:700;color:var(--slate);}
-  .fbar{background:var(--n200);border-radius:6px 6px 2px 2px;margin:2px auto;width:70%;}
-  .fcol.today .fbar{background:var(--orange);}
-  .fcol.today .fcol-n{color:var(--orange-dark);}
-  .forecast-cap{font-size:var(--fs-13);color:var(--n500);margin-bottom:14px;}
+  /* 7-day due forecast: one clean chart, not a row of blocks - bars rise off
+     a single baseline, empty days are quiet dots on it (same "not a slot"
+     language as the calendar's off-days), numbers only where there is work */
+  .pi-kicker{font-family:var(--font-head);font-weight:600;font-size:11px;
+      letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.6);
+      margin-bottom:12px;display:flex;align-items:center;gap:7px;}
+  .pi-kicker .icon{width:14px;height:14px;color:var(--orange);}
+  .fchart{display:flex;gap:10px;align-items:flex-end;height:88px;
+      border-bottom:2px solid rgba(255,255,255,.16);}
+  .fcell{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;
+      justify-content:flex-end;gap:5px;}
+  .fcol-n{font-weight:700;color:#fff;font-size:var(--fs-13);font-variant-numeric:tabular-nums;}
+  .fbar{width:100%;max-width:34px;border-radius:7px 7px 0 0;
+      background:color-mix(in srgb, #fff 38%, var(--slate));}
+  .fcell.today .fbar{background:var(--orange);}
+  .fdot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.28);margin-bottom:4px;}
+  .flabels{display:flex;gap:10px;margin-top:7px;}
+  .fcol-lab{flex:1;min-width:0;text-align:center;font-family:var(--font-head);
+      font-weight:600;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+      color:rgba(255,255,255,.55);}
+  .fcol-lab.today{color:#fff;}
+  .forecast-cap{font-size:var(--fs-13);color:rgba(255,255,255,.7);margin:12px 0 0;}
+  .deck-hero .panel-inner{padding:14px 16px;}
+  /* the deck's icon chip joins the layering: slate box, brand-color icon */
+  .deck-hero .deck-top .chip{background:var(--slate);}
+  .deck-hero .deck-top .chip.tone-orange{color:var(--orange);}
+  .deck-hero .deck-top .chip.tone-lime{color:var(--lime);}
   .dbar{margin:10px 0;} .dbar-lab{font-size:var(--fs-13);margin-bottom:5px;} .dbar-name{font-weight:700;}
   .streak-grid{display:grid;grid-template-columns:repeat(15,1fr);gap:4px;max-width:420px;}
   .streak-cell{aspect-ratio:1;background:var(--n200);border-radius:3px;}
@@ -580,6 +743,15 @@
   .ln-title{font-family:var(--font-head);font-weight:700;font-size:var(--fs-20);}
   .ln-sub{margin:6px 0 0;}
   .mock-cfg{margin:16px 0;}
+  .po-lab{font-family:var(--font-head);font-weight:600;font-size:11px;
+      text-transform:uppercase;letter-spacing:.06em;
+      color:color-mix(in srgb, var(--onyx) 75%, var(--orange));margin-top:6px;}
+  /* white button pops on the orange surface; keep the tactile press edge */
+  .mock-start{background:#fff;border-color:var(--orange-dark);
+      box-shadow:0 3px 0 var(--orange-dark);margin-top:4px;}
+  .po-note{font-size:var(--fs-13);color:var(--onyx);margin:12px 0 0;max-width:52ch;}
+  .panel-orange .pill{border-color:color-mix(in srgb, var(--onyx) 35%, var(--orange));}
+  .panel-orange .pill.on{background:var(--onyx);border-color:var(--onyx);}
   .mock-row{padding:6px 0;}
   .mock-pct{font-weight:700;font-size:var(--fs-20);}
   .timer{background:var(--onyx);color:#fff;font-family:var(--font-head);font-weight:700;
@@ -587,6 +759,46 @@
   .timer.warn{background:var(--orange);color:var(--onyx);}
   .done{text-align:center;padding:24px;}
   .done-score{font-weight:700;font-size:var(--fs-39);margin:10px 0 4px;}
+
+  /* ==========================================================================
+     SESSION-END RECAP (W2 chunk 7) - the peak-end moment: staggered honest
+     recap lines. Fades are decorative and gated behind reduced-motion.
+     ========================================================================== */
+  .recap-lines{max-width:480px;margin:16px auto 4px;text-align:left;
+      display:flex;flex-direction:column;gap:10px;}
+  .recap-line{display:flex;align-items:flex-start;gap:12px;background:var(--n50);
+      border:1px solid var(--n100);border-radius:var(--radius-btn);
+      padding:12px 14px;line-height:1.5;}
+  .recap-ic{display:flex;flex:none;color:var(--slate);margin-top:1px;}
+  .recap-ic .icon{width:19px;height:19px;}
+  .recap-line.up .recap-ic{color:var(--lime-text);}
+  .recap-line.down .recap-ic,.recap-line.flat .recap-ic{color:var(--n500);}
+  .recap-line.surprise{background:var(--orange-bg);
+      border-color:color-mix(in srgb, var(--orange) 22%, #fff);}
+  .recap-line.surprise .recap-ic{color:var(--orange-dark);}
+  @media (prefers-reduced-motion: no-preference){
+    .recap-line{opacity:0;animation:recapIn 400ms var(--ease) forwards;}
+    .recap-line:nth-child(1){animation-delay:120ms;}
+    .recap-line:nth-child(2){animation-delay:420ms;}
+    .recap-line:nth-child(3){animation-delay:720ms;}
+    .recap-line:nth-child(4){animation-delay:1020ms;}
+    @keyframes recapIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  }
+
+  /* confetti: 4 brand colors only, <=2s, never blocks input (pointer-events
+     none), fully absent under reduced-motion (JS returns early too) */
+  .confetti{position:fixed;inset:0;z-index:40;pointer-events:none;overflow:hidden;}
+  .cfp{position:absolute;top:-14px;width:8px;height:12px;border-radius:2px;opacity:0;}
+  .cfp-o{background:var(--orange);} .cfp-l{background:var(--lime);}
+  .cfp-s{background:var(--slate);} .cfp-w{background:#fff;border:1px solid var(--n200);}
+  @media (prefers-reduced-motion: no-preference){
+    .cfp{animation:cfall linear forwards;}
+    @keyframes cfall{
+      0%{opacity:1;transform:translateY(0) rotate(0deg);}
+      90%{opacity:1;}
+      100%{opacity:0;transform:translateY(104vh) rotate(520deg);}
+    }
+  }
   .breakdown{margin:16px 0;text-align:left;}
   .export-area{margin-top:12px;}
   .export-ta{width:100%;height:140px;font-family:Consolas,monospace;font-size:12px;
@@ -596,9 +808,9 @@
      COURSE IDENTITY - names + links the source course; "What you'll learn"
      lists the five exam domains with their real weights (orientation).
      ========================================================================== */
-  .course-band{background:var(--slate);color:#fff;border-radius:var(--radius);
+  .course-band{background:var(--onyx);color:#fff;border-radius:var(--radius);
       padding:20px;margin:24px 0;display:flex;gap:14px;align-items:flex-start;}
-  .course-band .chip{background:rgba(255,255,255,.08);color:var(--orange);
+  .course-band .chip{background:var(--slate);color:var(--orange);
       width:44px;height:44px;border-radius:10px;}
   .course-band .chip .icon{width:24px;height:24px;}
   .cb-kicker{font-family:var(--font-head);font-weight:600;font-size:11px;

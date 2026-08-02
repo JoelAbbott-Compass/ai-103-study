@@ -52,7 +52,9 @@
     calibration: { term: "Confidence vs accuracy", text: "After each practice answer you tag how sure you felt. This compares that feeling with reality. High confidence but wrong is the dangerous mix - those facts feel safe, so you never review them, and the exam room is where they surface. Low confidence but right means you know more than you give yourself credit for." },
     streak: { term: "Streak", text: "Consecutive scheduled study days completed. Your plan is Monday through Saturday, so Sundays pass silently and never break it. A night counts when you do real practice, not when you open the app. Miss a night and a streak freeze covers it automatically overnight - you earn one at day 3 and one for each perfect week, holding up to two. No freeze saved? You get 2 days to earn the streak back with one bigger session." },
     spread: { term: "Tonight's queue", text: "Reviews pile up when you miss a night, so the app caps tonight at 15 cards and spreads the rest across the coming nights, most-behind cards first. Nothing is dropped and no schedule is rewritten behind your back - the extras simply surface over the next evenings." },
-    leech: { term: "Moved to lab", text: "A card you've gotten wrong 3 times isn't a memorization problem - it's a sign that fact needs hands-on practice. The app routes it out of your review pile and onto Saturday's lab list, where you'll build it instead of memorizing it." }
+    leech: { term: "Moved to lab", text: "A card you've gotten wrong 3 times isn't a memorization problem - it's a sign that fact needs hands-on practice. The app routes it out of your review pile and onto Saturday's lab list, where you'll build it instead of memorizing it." },
+    quests: { term: "Tonight's quests", text: "Small targets built from your real plan each night: tonight's lecture, a guide review, the flashcards that are due, and a set of practice questions. Tap a quest to jump straight into that work; the ring fills as you finish. Watch the lecture before you open the app and mark it - the ring starts already partly full, because that work counts. The bonus quest is optional: skip it with the X and nothing is lost - no penalty, no catch-up debt." },
+    plan: { term: "Your 8-week plan", text: "The road from here to exam week in phases: learn the course, fill the gaps and start practice exams, then drill until two timed mocks clear 85%. The orange cell is the week you're in. One week at a time - progress here never turns into one long bar you're behind on." }
   };
   // one toggle behavior for both trigger styles; host = the surface the panel
   // opens inside (one panel open per host at a time)
@@ -100,7 +102,13 @@
     { id: "guides", label: "Guides", icon: "bookOpen", render: renderGuides },
     { id: "progress", label: "Progress", icon: "chartLine", render: renderProgress }
   ];
-  function go(id) { location.hash = "#" + id; }
+  // If the hash is already the target (e.g. finishing a session that started
+  // on Home), setting it fires no hashchange - re-route directly so buttons
+  // like "Back to Home" always work.
+  function go(id) {
+    if (location.hash === "#" + id) { route(); return; }
+    location.hash = "#" + id;
+  }
   function current() { return (location.hash || "#home").slice(1).split("/")[0]; }
   function route() {
     var id = current();
@@ -164,16 +172,26 @@
       wrap.appendChild(rb);
     }
 
-    // Study now
-    var sn = h("div", "studynow");
-    var plan = Store.buildSession(8);
-    var head = h("div", "sn-head");
-    head.appendChild(h("h2", null, "Study now"));
-    head.appendChild(h("p", "muted",
-      plan.cards.length + " flashcard" + (plan.cards.length === 1 ? "" : "s") + " due  +  " +
-      plan.questions.length + " questions  ·  focus: " + DOMAIN_NAME[plan.weakest]));
-    sn.appendChild(head);
-    var big = h("button", "btn btn-primary btn-lg", "Start tonight's session  →");
+    // Tonight panel (chunk 7): derived quests + declinable bonus + ring.
+    // Layering rule: onyx outer panel, slate inner rows, orange action.
+    var sn = h("div", "studynow dark-panel");
+    var qt = Store.questsTonight();
+    var main = h("div", "sn-main");
+    var headRow = h("div", "sn-headrow");
+    headRow.appendChild(h("h2", null, "Tonight"));
+    headRow.appendChild(infoBtn("quests", sn));
+    main.appendChild(headRow);
+    if (qt.note) main.appendChild(h("p", "sn-note", qt.note));
+    qt.quests.forEach(function (q) { main.appendChild(questRow(q)); });
+    if (qt.bonus) main.appendChild(bonusRow(qt.bonus));
+    main.appendChild(h("p", "sn-note", "Session focus: " + DOMAIN_NAME[Store.weakestDomain()]));
+    sn.appendChild(main);
+    var side = h("div", "sn-side");
+    side.appendChild(questRing(qt));
+    sn.appendChild(side);
+    var ws = weekStrip();
+    if (ws) sn.appendChild(ws);
+    var big = h("button", "btn btn-primary btn-lg sn-start", "Start tonight's session  →");
     big.onclick = startStudyNow;
     sn.appendChild(big);
     wrap.appendChild(sn);
@@ -231,7 +249,8 @@
   // the start value is flushed with a forced reflow because rAF does not fire
   // under headless --dump-dom (same trick as the answer sheet).
   var animatedRings = {};
-  function svgRing(pct, size, ariaLabel, animKey) {
+  function svgRing(pct, size, ariaLabel, animKey, opts) {
+    opts = opts || {};
     var NS = "http://www.w3.org/2000/svg";
     var stroke = Math.max(8, Math.round(size / 11));
     var r = (size - stroke) / 2;
@@ -268,6 +287,19 @@
       return c;
     }
     var track = circle("ring-track");
+    // compass-dial detail: cardinal ticks at 12/3/6/9 o'clock (the app's
+    // rings are a quiet play on the compass mark)
+    var cardinals = document.createDocumentFragment();
+    [0, 90, 180, 270].forEach(function (deg) {
+      var t = document.createElementNS(NS, "line");
+      t.setAttribute("class", "ring-card");
+      t.setAttribute("x1", size / 2);
+      t.setAttribute("x2", size / 2);
+      t.setAttribute("y1", size / 2 - r - stroke / 2);
+      t.setAttribute("y2", size / 2 - r - stroke / 2 + (big ? 8 : 6));
+      t.setAttribute("transform", "rotate(" + deg + " " + (size / 2) + " " + (size / 2) + ")");
+      cardinals.appendChild(t);
+    });
     var prog = circle("ring-prog");
     // round caps read as a smudge below ~3% (the two cap dots overlap), and a
     // round cap still paints a dot at 0% - butt caps under 3% fix both
@@ -275,19 +307,22 @@
     prog.setAttribute("stroke-dasharray", String(circ));
     prog.setAttribute("transform", "rotate(-90 " + (size / 2) + " " + (size / 2) + ")");
     svg.appendChild(track);
+    svg.appendChild(cardinals);
     // the 85% goal marker: onyx tick through the track, extending outward so it
     // reads as a milestone flag, not a stray hairline (drawn at 12 o'clock,
     // rotated to 85% of a turn = 306deg)
     var ext = big ? 4 : 2;
-    var tick = document.createElementNS(NS, "line");
-    tick.setAttribute("class", "ring-tick");
-    tick.setAttribute("x1", size / 2);
-    tick.setAttribute("x2", size / 2);
-    tick.setAttribute("y1", size / 2 - r - stroke / 2 - ext);
-    tick.setAttribute("y2", size / 2 - r + stroke / 2);
-    tick.setAttribute("transform", "rotate(" + (0.85 * 360) + " " + (size / 2) + " " + (size / 2) + ")");
-    svg.appendChild(tick);
-    if (big) {
+    if (!opts.noTick) {
+      var tick = document.createElementNS(NS, "line");
+      tick.setAttribute("class", "ring-tick");
+      tick.setAttribute("x1", size / 2);
+      tick.setAttribute("x2", size / 2);
+      tick.setAttribute("y1", size / 2 - r - stroke / 2 - ext);
+      tick.setAttribute("y2", size / 2 - r + stroke / 2);
+      tick.setAttribute("transform", "rotate(" + (0.85 * 360) + " " + (size / 2) + " " + (size / 2) + ")");
+      svg.appendChild(tick);
+    }
+    if (big && !opts.noTick) {
       // "85%" label just outside the tick (306deg from 12 o'clock = upper left)
       var rad = 0.85 * 2 * Math.PI;
       var lr = r + stroke / 2 + ext + 8;
@@ -361,7 +396,7 @@
   function courseBand() {
     var c = STUDY_DATA.meta.course;
     if (!c) return null;
-    var band = h("div", "course-band");
+    var band = h("div", "course-band dark-panel");
     var chip = h("span", "chip");
     chip.innerHTML = (window.ICONS && ICONS.graduationCap) || "";
     band.appendChild(chip);
@@ -427,6 +462,132 @@
       });
     sec.appendChild(card);
     return sec;
+  }
+
+  // ---- tonight quest components (chunk 7) ----------------------------------
+  // Every quest row is a button that takes you straight into that work
+  // (Joel review 2026-08-01). The lecture row toggles its mark (the work is
+  // external); the guide row opens the guide, with a separate check control
+  // to mark it reviewed (reading is at your pace - an open is never a reward).
+  // Completion is always derived by the store - a check always means real work.
+  function questRow(q) {
+    var row = h(q.id === "guide" ? "div" : "button", "quest-row");
+    row.setAttribute("data-q", q.id);
+    var ic = h("span", "quest-ic");
+    ic.innerHTML = (window.ICONS && ICONS[q.icon]) || "";
+    row.appendChild(ic);
+    row.appendChild(h("span", "quest-lab", q.label));
+    row.appendChild(questStatus(q));
+    if (q.id === "lecture") {
+      row.setAttribute("aria-pressed", q.done ? "true" : "false");
+      row.onclick = function () { Store.markLecture(); renderHome(); };
+    } else if (q.id === "guide") {
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      function openGuide() { location.hash = "#guides/" + q.guideId; }
+      row.onclick = openGuide;
+      row.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGuide(); } };
+      var chk = h("button", "guide-check" + (q.done ? " on" : ""));
+      chk.setAttribute("aria-pressed", q.done ? "true" : "false");
+      chk.setAttribute("aria-label", "Mark the guide reviewed");
+      chk.title = "Mark reviewed";
+      chk.innerHTML = (window.ICONS && ICONS.check) || "";
+      chk.onclick = function (e) { e.stopPropagation(); Store.markGuide(); renderHome(); };
+      row.appendChild(chk);
+    } else if (q.id === "cards") {
+      row.onclick = function () {
+        var tq = Store.tonightQueue();
+        if (tq.cards.length) runFlashcardDeck(tq.cards, function () { go("home"); });
+      };
+    } else if (q.id === "questions") {
+      row.onclick = function () {
+        runQuestions(Store.buildSession(8).questions, "practice", function (r) {
+          showSessionDone(r, "Practice complete");
+        });
+      };
+    }
+    return row;
+  }
+  function questStatus(q) {
+    var st = h("span", "quest-status");
+    if (q.done) {
+      st.classList.add("done");
+      st.innerHTML = (window.ICONS && ICONS.circleCheck) || "";
+      st.appendChild(document.createTextNode("done"));
+    } else if (q.status) {
+      st.textContent = q.status;
+    }
+    return st;
+  }
+  // the bonus is genuinely optional: one tap declines it for the night,
+  // nothing is lost and nothing comes back to collect
+  function bonusRow(b) {
+    var row = h("div", "quest-row bonus");
+    row.setAttribute("data-q", "bonus");
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    function launch() {
+      if (b.kind === "misses") {
+        var m = Store.misses();
+        if (m.length) runQuestions(m, "practice", function (r) { showSessionDone(r, "Misses cleared"); });
+      } else {
+        runQuestions(shuffleStable(CONTENT.questions).slice(0, 5), "practice", function (r) {
+          showSessionDone(r, "Bonus done");
+        });
+      }
+    }
+    row.onclick = launch;
+    row.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); launch(); } };
+    var ic = h("span", "quest-ic");
+    ic.innerHTML = (window.ICONS && ICONS[b.icon]) || "";
+    row.appendChild(ic);
+    row.appendChild(h("span", "quest-lab", b.label));
+    row.appendChild(questStatus(b));
+    var x = h("button", "bonus-x");
+    x.innerHTML = (window.ICONS && ICONS.x) || "";
+    x.setAttribute("aria-label", "Skip tonight's bonus - no penalty");
+    x.title = "Skip tonight's bonus - no penalty";
+    x.onclick = function (e) {
+      e.stopPropagation();
+      Store.declineBonus();
+      renderHome();
+    };
+    row.appendChild(x);
+    return row;
+  }
+  function questRing(qt) {
+    var pct = qt.total ? Math.round((qt.done / qt.total) * 100) : 0;
+    var box = svgRing(pct, 88,
+      "Tonight: " + qt.done + " of " + qt.total + " quests complete.", "questring", { noTick: true });
+    box.classList.add("quest-ringbox", "ring-sm");
+    if (pct >= 100) {
+      var prog = box.querySelector(".ring-prog");
+      if (prog) prog.classList.add("hit");
+    }
+    var num = h("div", "ring-num");
+    num.setAttribute("aria-hidden", "true");
+    num.appendChild(h("div", "ring-val", qt.done + "/" + qt.total));
+    num.appendChild(h("div", "ring-sub", "tonight"));
+    box.appendChild(num);
+    return box;
+  }
+  // this week at a glance: Mon-Sat cells from the same walker as the calendar
+  function weekStrip() {
+    var wb = Store.weekBar();
+    if (!wb) return null;
+    var NAME = { done: "studied", frz: "covered by a freeze", rep: "earned back", pend: "tonight", miss: "missed", fut: "coming up", off: "off" };
+    var strip = h("div", "weekstrip");
+    strip.setAttribute("role", "img");
+    strip.setAttribute("aria-label", "This week: " + wb.map(function (d) {
+      return weekdayName(d.date) + " " + (NAME[d.state] || d.state);
+    }).join(", ") + ".");
+    wb.forEach(function (d) {
+      var day = h("div", "ws-day");
+      day.appendChild(h("span", "ws-cell " + d.state));
+      day.appendChild(h("span", "ws-lab", d.label));
+      strip.appendChild(day);
+    });
+    return strip;
   }
 
   // ---- shared question runner --------------------------------------------
@@ -626,13 +787,20 @@
   }
 
   function startStudyNow() {
+    var before = sessionBaseline();
     var plan = Store.buildSession(8);
     var cards = plan.cards.slice(0, 10);
     function doQuestions() {
-      runQuestions(plan.questions, "practice", function (res) { showSessionDone(res, "Study session complete"); });
+      runQuestions(plan.questions, "practice", function (res) {
+        showRecap({ title: "That's tonight done.", res: res, cardsCount: cards.length, before: before });
+      });
     }
     if (cards.length) runFlashcardDeck(cards, doQuestions);
     else doQuestions();
+  }
+  // facts captured before a session so the recap can show a TRUE delta
+  function sessionBaseline() {
+    return { r: Store.readiness(), mastered: Store.objectiveProgress().mastered };
   }
   function weekdayName(dateStr) {
     var p = dateStr.split("-").map(Number);
@@ -641,11 +809,15 @@
   // Earn-Back repair: a double-size session (full card queue + 16 questions);
   // the repair is recorded ONLY when the whole session completes.
   function startRepairSession() {
+    var before = sessionBaseline();
     var plan = Store.buildSession(16);
     function doQuestions() {
       runQuestions(plan.questions, "practice", function (res) {
         var restored = Store.recordRepair();
-        showSessionDone(res, restored ? "Streak earned back" : "Session complete");
+        showRecap({
+          title: restored ? "Streak earned back" : "Session complete",
+          res: res, cardsCount: plan.cards.length, before: before, repaired: restored
+        });
       });
     }
     if (plan.cards.length) runFlashcardDeck(plan.cards, doQuestions);
@@ -661,6 +833,107 @@
     row.appendChild(a); row.appendChild(b);
     wrap.appendChild(row);
     mount(wrap);
+  }
+
+  // ---- session-end recap (chunk 7): the peak-end moment --------------------
+  // Scaled celebration, then honest lines: what you did, ONE true delta (shown
+  // even when zero or negative), what tomorrow holds, and - only when there is
+  // a true stat worth saying - a rotating surprise line. Never inflated.
+  function showRecap(opts) {
+    var after = { r: Store.readiness(), mastered: Store.objectiveProgress().mastered };
+    var deltaPts = Math.round((after.r - opts.before.r) * 100);
+    var newMastered = after.mastered - opts.before.mastered;
+    var effort = (opts.res.total || 0) + (opts.cardsCount || 0);
+    confetti(Math.min(64, 20 + effort * 2 + (newMastered > 0 ? 18 : 0) + (opts.repaired ? 12 : 0)));
+
+    var wrap = h("div", "card done recap");
+    wrap.appendChild(h("h2", null, opts.title));
+    if (opts.res.total) wrap.appendChild(h("div", "done-score", opts.res.correct + " / " + opts.res.total + " correct"));
+    var lines = h("div", "recap-lines");
+
+    // 1 - what you did
+    var didBits = [];
+    if (opts.cardsCount) didBits.push(opts.cardsCount + " flashcard" + (opts.cardsCount === 1 ? "" : "s") + " reviewed");
+    if (opts.res.total) {
+      var pct = Math.round((opts.res.correct / opts.res.total) * 100);
+      didBits.push(opts.res.total + " question" + (opts.res.total === 1 ? "" : "s") + " answered (" + pct + "% correct)");
+    }
+    lines.appendChild(recapLine("circleCheck", didBits.join(" · ") || "Session logged", null));
+
+    // 2 - the true delta, even when it is zero or negative
+    var dir = deltaPts > 0 ? "up" : (deltaPts < 0 ? "down" : "flat");
+    var dTxt = (deltaPts > 0 ? "+" : "") + deltaPts + " pt" + (Math.abs(deltaPts) === 1 ? "" : "s") + " readiness tonight";
+    if (deltaPts < 0) dTxt += " - dips happen when practice exposes weak spots; that's the system working";
+    else if (deltaPts === 0) dTxt += " - readiness moves slowly by design; the work still counts";
+    lines.appendChild(recapLine(dir === "up" ? "trendingUp" : (dir === "down" ? "trendingDown" : "trendingFlat"), dTxt, dir));
+
+    // 3 - tomorrow, concretely
+    var tm = Store.tomorrowPreview();
+    var tTxt = tm.offDay
+      ? "Tomorrow's your off-day - rest. " + tm.nextName + ": ~" + tm.cards + " card" + (tm.cards === 1 ? "" : "s") + " + the next lecture."
+      : "Tomorrow: ~" + tm.cards + " card" + (tm.cards === 1 ? "" : "s") + " + the next lecture.";
+    lines.appendChild(recapLine("calendar", tTxt, null));
+
+    // 4 - honest surprise (only when a true stat exists)
+    var s = surpriseLine(newMastered, after);
+    if (s) lines.appendChild(s);
+
+    wrap.appendChild(lines);
+    var row = h("div", "actions");
+    row.style.justifyContent = "center";
+    var a = h("button", "btn btn-primary", "Back to Home"); a.onclick = function () { go("home"); };
+    var b = h("button", "btn", "See progress"); b.onclick = function () { go("progress"); };
+    row.appendChild(a); row.appendChild(b);
+    wrap.appendChild(row);
+    mount(wrap);
+  }
+  function recapLine(iconKey, text, tone) {
+    var d = h("div", "recap-line" + (tone ? " " + tone : ""));
+    var ic = h("span", "recap-ic");
+    ic.innerHTML = (window.ICONS && ICONS[iconKey]) || "";
+    d.appendChild(ic);
+    d.appendChild(h("span", null, text));
+    return d;
+  }
+  // candidates are all TRUE stats; a new mastered objective takes priority,
+  // otherwise rotate by day so the slot doesn't repeat every night
+  function surpriseLine(newMastered, after) {
+    if (newMastered > 0) {
+      return supLine("New exam skill proven tonight - that's " +
+        after.mastered + " of " + Store.objectiveProgress().total + " objectives mastered.");
+    }
+    var cands = [];
+    var totalAnswers = Store.calibration().length;
+    if (totalAnswers >= 20) cands.push("You've answered " + totalAnswers + " practice questions so far.");
+    var mature = Store.cardCounts().mature;
+    if (mature > 0) cands.push(mature + " fact" + (mature === 1 ? " is" : "s are") + " locked into long-term memory.");
+    var st = Store.streak();
+    if (st >= 3) cands.push("That's " + st + " scheduled nights in a row.");
+    if (after.mastered > 0) cands.push(after.mastered + " of " + Store.objectiveProgress().total + " exam skills proven.");
+    if (!cands.length) return null;
+    return supLine(cands[new Date().getDate() % cands.length]);
+  }
+  function supLine(text) { return recapLine("sparkles", text, "surprise"); }
+
+  // ---- confetti (chunk 7, the last W1 leftover) -----------------------------
+  // Brand colors only, under 2 seconds, pointer-events none so it can never
+  // block input, and absent entirely under reduced-motion.
+  function confetti(count) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var old = document.querySelector(".confetti");
+    if (old) old.remove();
+    var box = h("div", "confetti");
+    box.setAttribute("aria-hidden", "true");
+    var tones = ["cfp-o", "cfp-l", "cfp-s", "cfp-w"];
+    for (var i = 0; i < count; i++) {
+      var p = h("span", "cfp " + tones[i % tones.length]);
+      p.style.left = (Math.random() * 100) + "%";
+      p.style.animationDelay = (Math.random() * 0.3).toFixed(2) + "s";
+      p.style.animationDuration = (1.1 + Math.random() * 0.6).toFixed(2) + "s";
+      box.appendChild(p);
+    }
+    document.body.appendChild(box);
+    setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 2000);
   }
 
   // ---- PRACTICE -----------------------------------------------------------
@@ -739,7 +1012,7 @@
       else counts.learning++;
     });
 
-    var deck = h("div", "card deck-hero");
+    var deck = h("div", "deck-hero dark-panel");
     var top = h("div", "deck-top");
     top.appendChild(chipIcon("layers", tq.cards.length ? "orange" : "lime"));
     var nums = h("div");
@@ -764,24 +1037,42 @@
     }
     deck.appendChild(chips);
 
-    // 7-day due forecast (spaced repetition made visible)
+    // 7-day due forecast (spaced repetition made visible): bars rise off one
+    // baseline; a day with nothing due is a quiet dot, not an empty block
     var fc = Store.dueForecast(7);
     var maxDue = Math.max.apply(null, fc.map(function (d) { return d.due; }).concat([1]));
-    var chart = h("div", "forecast");
+    var chart = h("div", "fchart");
     chart.setAttribute("role", "img");
     chart.setAttribute("aria-label", "Reviews due over the next 7 days: " +
       fc.map(function (d) { return d.label + " " + d.due; }).join(", "));
+    var labels = h("div", "flabels");
+    labels.setAttribute("aria-hidden", "true");
     fc.forEach(function (d, i) {
-      var col = h("div", "fcol" + (i === 0 ? " today" : ""));
-      col.appendChild(h("div", "fcol-n", String(d.due)));
-      var bar = h("div", "fbar");
-      bar.style.height = Math.max(4, Math.round((d.due / maxDue) * 56)) + "px";
-      col.appendChild(bar);
-      col.appendChild(h("div", null, d.label));
-      chart.appendChild(col);
+      var cell = h("div", "fcell" + (i === 0 ? " today" : ""));
+      if (d.due > 0) {
+        cell.appendChild(h("div", "fcol-n", String(d.due)));
+        var bar = h("div", "fbar");
+        // px, not % - the flex cell has no fixed height for a % to resolve
+        bar.style.height = Math.max(10, Math.round((d.due / maxDue) * 60)) + "px";
+        cell.appendChild(bar);
+      } else {
+        cell.appendChild(h("div", "fdot"));
+      }
+      chart.appendChild(cell);
+      labels.appendChild(h("div", "fcol-lab" + (i === 0 ? " today" : ""), d.label));
     });
-    deck.appendChild(chart);
-    deck.appendChild(h("p", "forecast-cap", "Spaced repetition schedules each card just before you'd forget it — this is your review load for the week."));
+    // slate inner panel on the onyx hero (layering rule)
+    var fbox = h("div", "panel-inner");
+    var kick = h("div", "pi-kicker");
+    var kic = h("span");
+    kic.innerHTML = (window.ICONS && ICONS.chartLine) || "";
+    if (kic.firstChild) kick.appendChild(kic.firstChild);
+    kick.appendChild(document.createTextNode("Your review load this week"));
+    fbox.appendChild(kick);
+    fbox.appendChild(chart);
+    fbox.appendChild(labels);
+    fbox.appendChild(h("p", "forecast-cap", "Spaced repetition schedules each card just before you'd forget it — nights stay light when you keep up."));
+    deck.appendChild(fbox);
 
     var row = h("div", "filters");
     var b1 = h("button", "btn btn-primary", "Review tonight (" + tq.cards.length + ")");
@@ -821,10 +1112,13 @@
       inner.appendChild(front);
       inner.appendChild(back);
       stage.appendChild(inner);
-      wrap.appendChild(stage);
-      wrap.appendChild(h("div", "fc-hint", "Tap the card to flip. Desktop: space flips, 1 2 3 rates."));
+      // onyx stage around the card (layering rule: media/feature stages = onyx)
+      var stagePanel = h("div", "fc-wrap dark-panel");
+      stagePanel.appendChild(stage);
+      stagePanel.appendChild(h("div", "fc-hint", "Tap the card to flip. Desktop: space flips, 1 2 3 rates."));
       var acts = h("div", "fc-actions");
-      wrap.appendChild(acts);
+      stagePanel.appendChild(acts);
+      wrap.appendChild(stagePanel);
 
       var revealed = false;
       function flip() {
@@ -1154,9 +1448,13 @@
     wrap.appendChild(h("p", "muted small",
       "The question bank grows every study session — a full-length mock fills in over Weeks 7-8."));
 
+    // orange showcase panel (layering rule variant): orange surface, onyx
+    // lettering, white compass mark watermark
     var total = CONTENT.questions.length;
-    var cfg = h("div", "mock-cfg card");
-    cfg.appendChild(h("div", "kpi-title", "Length"));
+    var cfg = h("div", "mock-cfg panel-orange");
+    cfg.appendChild(h("div", "po-kicker", "Real clock · about 90 seconds per question"));
+    cfg.appendChild(h("div", "po-title", "Ready to test yourself?"));
+    cfg.appendChild(h("div", "po-lab", "Length"));
     var counts = [10, total].filter(function (v, idx, a) { return a.indexOf(v) === idx && v <= total; });
     var chosenN = counts[0];
     var row = h("div", "filters");
@@ -1166,9 +1464,10 @@
       row.appendChild(b);
     });
     cfg.appendChild(row);
-    var start = h("button", "btn btn-primary btn-lg", "Start mock");
+    var start = h("button", "btn btn-lg mock-start", "Start mock  →");
     start.onclick = function () { startMock(chosenN); };
     cfg.appendChild(start);
+    cfg.appendChild(h("p", "po-note", "Graded at the end, just like exam day — scores of 85%+ count toward your booking gate."));
     wrap.appendChild(cfg);
 
     var past = Store.mocks();
@@ -1275,7 +1574,7 @@
     var r = Store.readiness();
     var cc = Store.cardCounts();
     var gate = Store.gateStatus();
-    var hero = h("div", "card prog-hero");
+    var hero = h("div", "prog-hero dark-panel");
     hero.appendChild(readinessRing(r * 100, 180, "progress", "of 85% target"));
     var stats = h("div", "ph-stats");
     stats.appendChild(phStat("Days to exam", String(Store.daysToExam())));
@@ -1290,6 +1589,9 @@
         "under 10% before Week 3 is expected. Watch the trend, not the level."));
     }
     wrap.appendChild(hero);
+
+    // the 8-week milestone map: where this week sits on the road to the exam
+    wrap.appendChild(planSection());
 
     // course position: the whole-course view (lectures + objectives)
     var cp = Store.courseProgress();
@@ -1459,6 +1761,55 @@
     box.appendChild(copy);
     sec.appendChild(box);
     ta.focus(); ta.select();
+  }
+  // ---- 8-week milestone map (chunk 7) ---------------------------------------
+  // Phase rows of week cells, never one long bar. Past weeks are neutral (a
+  // week behind you is not automatically a week done well), the current week
+  // is orange, exam week is its own chip at the end.
+  function fmtShortDate(dateStr) {
+    var p = dateStr.split("-").map(Number);
+    var M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return M[p[1] - 1] + " " + p[2];
+  }
+  function planSection() {
+    var pw = Store.planWeeks();
+    var sec = section("Your 8-week plan", "calendar", "plan");
+    var card = h("div", "card plan-card");
+    // group consecutive weeks by phase label (from STUDY_DATA.schedule.phases)
+    var groups = [];
+    pw.weeks.forEach(function (w) {
+      var g = groups[groups.length - 1];
+      if (!g || g.label !== w.phase) { g = { label: w.phase, weeks: [] }; groups.push(g); }
+      g.weeks.push(w);
+    });
+    groups.forEach(function (g) {
+      var row = h("div", "plan-phase");
+      row.setAttribute("role", "img");
+      row.setAttribute("aria-label", g.label + ": weeks " + g.weeks[0].n + " to " +
+        g.weeks[g.weeks.length - 1].n +
+        (g.weeks.some(function (w) { return w.state === "current"; }) ? ", you are here" : ""));
+      row.appendChild(h("div", "plan-lab", g.label));
+      var cells = h("div", "plan-weeks");
+      g.weeks.forEach(function (w) {
+        cells.appendChild(h("span", "pw-cell " + w.state, "W" + w.n));
+      });
+      row.appendChild(cells);
+      card.appendChild(row);
+    });
+    var ex = h("div", "plan-phase");
+    ex.setAttribute("role", "img");
+    ex.setAttribute("aria-label", "Exam week starts " + fmtShortDate(STUDY_DATA.meta.exam_date));
+    ex.appendChild(h("div", "plan-lab", "Exam"));
+    var ec = h("div", "plan-weeks");
+    ec.appendChild(h("span", "pw-cell pw-exam", "Week of " + fmtShortDate(STUDY_DATA.meta.exam_date)));
+    ex.appendChild(ec);
+    card.appendChild(ex);
+    var cur = pw.weeks.filter(function (w) { return w.state === "current"; })[0];
+    card.appendChild(h("p", "plan-cap muted small", cur
+      ? "You're in week " + cur.n + ": " + cur.phase + "."
+      : "Your plan starts Monday - week 1 begins " + fmtShortDate(STUDY_DATA.meta.study_start) + "."));
+    sec.appendChild(card);
+    return sec;
   }
   function section(title, iconKey, explainKey) {
     var s = h("div", "section");

@@ -37,5 +37,14 @@ window.STUDY_DATA = {
   ],
 
   // Pace vs plan (from study_schedule.md). Before study_start, pace is neutral.
-  schedule: { total_lectures:102, watched:3, planned_to_date:0, completed_to_date:0 }
+  // phases: the plan's shape for the milestone map. Week 1 starts study_start;
+  // weeks run Mon-Sat. Labels/spans come from study_schedule.md headings.
+  schedule: {
+    total_lectures:102, watched:3, planned_to_date:0, completed_to_date:0,
+    phases: [
+      { label:"Learn the course",        from_week:1, to_week:5 },
+      { label:"Fill gaps + first mocks", from_week:6, to_week:7 },
+      { label:"Drill to 85%",            from_week:8, to_week:8 }
+    ]
+  }
 };

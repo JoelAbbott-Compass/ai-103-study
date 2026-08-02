@@ -36,7 +36,7 @@ window.Store = (function () {
 
   // ---- state --------------------------------------------------------------
   function blank() {
-    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {}, snapshots: [], repairs: [] };
+    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {}, snapshots: [], repairs: [], quests: {} };
   }
   var state = load();
 
@@ -342,6 +342,152 @@ window.Store = (function () {
     }
     return out;
   }
+  // ---- tonight's quests (W2 chunk 7) ---------------------------------------
+  // Three small targets derived from real state on every call, plus one
+  // declinable bonus. Only three things are ever STORED (per date): the manual
+  // lecture mark, the night's bonus assignment, and a bonus decline. Completion
+  // is always derived - a quest can never be "done" without the work existing.
+  var Q_TARGET = 8;                              // nightly question target (ritual size)
+  function questDay() {
+    var t = todayStr();
+    if (!state.quests[t]) state.quests[t] = {};
+    return state.quests[t];
+  }
+  function answersToday() {
+    var t = todayStr(), n = 0;
+    Object.keys(state.answers).forEach(function (qid) {
+      state.answers[qid].forEach(function (a) { if (tsToDateStr(a.ts) === t) n++; });
+    });
+    return n;
+  }
+  // the endowed start: watching tonight's lecture is real study done before the
+  // app opens, so marking it pre-fills the ring with credit that was EARNED
+  function markLecture() {
+    var qd = questDay();
+    qd.lecture = !qd.lecture;
+    save();
+    return !!qd.lecture;
+  }
+  function declineBonus() {
+    var qd = questDay();
+    qd.bonusDeclined = true;
+    save();
+  }
+  // guide review is real study at the learner's pace - manual mark, same
+  // pattern as the lecture (never auto-completed by a mere open)
+  function markGuide() {
+    var qd = questDay();
+    qd.guide = !qd.guide;
+    save();
+    return !!qd.guide;
+  }
+  function questsTonight() {
+    var t = todayStr(), start = STUDY_DATA.meta.study_start;
+    var qd = questDay();
+    var scheduled = t >= start && isScheduled(t);
+    var quests = [];
+    if (scheduled) {
+      quests.push({
+        id: "lecture", icon: "video", label: "Watch tonight's lecture",
+        manual: true, done: !!qd.lecture, status: qd.lecture ? "" : "tap when watched"
+      });
+    }
+    var g = (window.CONTENT && CONTENT.guides && CONTENT.guides.length)
+      ? CONTENT.guides[CONTENT.guides.length - 1] : null;
+    if (g) {
+      quests.push({
+        id: "guide", icon: "bookOpen", label: "Review the newest guide",
+        manual: true, done: !!qd.guide, status: qd.guide ? "" : "tap to open",
+        guideId: g.id
+      });
+    }
+    var tq = tonightQueue();
+    quests.push({
+      id: "cards", icon: "layers", label: "Clear tonight's flashcards",
+      done: tq.cards.length === 0,
+      status: tq.cards.length ? tq.cards.length + " left" : ""
+    });
+    var n = answersToday();
+    quests.push({
+      id: "questions", icon: "target", label: "Answer " + Q_TARGET + " practice questions",
+      done: n >= Q_TARGET, status: Math.min(n, Q_TARGET) + " of " + Q_TARGET
+    });
+    // bonus: assigned once per night so it can't shift goalposts mid-session;
+    // declining it costs nothing and is remembered for the night
+    var bonus = null;
+    if (!qd.bonusDeclined) {
+      if (!qd.bonusKind) { qd.bonusKind = misses().length ? "misses" : "extra"; save(); }
+      if (qd.bonusKind === "misses") {
+        var m = misses().length;
+        bonus = {
+          id: "bonus", kind: "misses", icon: "rotateCcw", label: "Bonus: clear your missed questions",
+          done: m === 0, status: m ? m + " to clear" : ""
+        };
+      } else {
+        var extra = Math.max(0, Math.min(5, n - Q_TARGET));
+        bonus = {
+          id: "bonus", kind: "extra", icon: "sparkles", label: "Bonus: 5 extra questions",
+          done: n >= Q_TARGET + 5, status: extra + " of 5"
+        };
+      }
+    }
+    var done = quests.filter(function (q) { return q.done; }).length;
+    var note = null;
+    if (!scheduled) {
+      note = t < start
+        ? "Your plan starts Monday - tonight's a warm-up, and it all counts."
+        : "Sunday is your off-day - anything tonight is pure bonus.";
+    }
+    return { quests: quests, bonus: bonus, done: done, total: quests.length, note: note };
+  }
+  // this week's Mon-Sat at a glance (states from the same honest walker)
+  function weekBar() {
+    var t = todayStr(), start = STUDY_DATA.meta.study_start;
+    if (t < start) return null;
+    var w = scheduleWalk();
+    var p = t.split("-").map(Number);
+    var dow = new Date(p[0], p[1] - 1, p[2]).getDay();      // 0 Sun .. 6 Sat
+    var mon = addDays(t, dow === 0 ? -6 : 1 - dow);
+    var letters = ["M", "T", "W", "T", "F", "S"];
+    var MAP = { studied: "done", extra: "done", frozen: "frz", repaired: "rep", pending: "pend", missed: "miss", off: "off" };
+    var out = [];
+    for (var i = 0; i < 6; i++) {
+      var d = addDays(mon, i);
+      var st = d > t ? "fut" : (MAP[w.states[d]] || (d < start ? "off" : "fut"));
+      out.push({ date: d, label: letters[i], state: st });
+    }
+    return out;
+  }
+  // the 8-week milestone map: week states + the phase each belongs to
+  function planWeeks() {
+    var start = STUDY_DATA.meta.study_start, t = todayStr();
+    var phases = STUDY_DATA.schedule.phases || [];
+    var totalW = 0;
+    phases.forEach(function (p) { if (p.to_week > totalW) totalW = p.to_week; });
+    var weeks = [], current = null;
+    for (var n = 1; n <= totalW; n++) {
+      var ws = addDays(start, (n - 1) * 7), we = addDays(ws, 5);
+      var st = t > we ? "past" : (t >= ws ? "current" : "future");
+      if (st === "current") current = n;
+      var ph = phases.filter(function (p) { return n >= p.from_week && n <= p.to_week; })[0];
+      weeks.push({ n: n, state: st, phase: ph ? ph.label : "" });
+    }
+    return { weeks: weeks, current: current };
+  }
+  // what tomorrow actually holds (for the session-end recap)
+  function tomorrowPreview() {
+    var t = todayStr(), start = STUDY_DATA.meta.study_start;
+    var d1 = addDays(t, 1);
+    var fc = dueForecast(3);
+    if (d1 >= start && isScheduled(d1)) {
+      return { offDay: false, cards: fc[1].due };
+    }
+    var names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    var d2 = addDays(t, 2);
+    var p = d2.split("-").map(Number);
+    return { offDay: true, nextName: names[new Date(p[0], p[1] - 1, p[2]).getDay()], cards: fc[2].due };
+  }
+
   function mocks() { return state.mocks.slice(); }
   function recordMock(score, total) {
     state.mocks.push({ date: todayStr(), score: score, total: total, pct: Math.round((score / total) * 100) });
@@ -474,6 +620,8 @@ window.Store = (function () {
     streak: streak, streakInfo: streakInfo, calendar: calendar,
     repairEligible: repairEligible, recordRepair: recordRepair,
     tonightQueue: tonightQueue, leeches: leeches, studyDaysWindow: studyDaysWindow,
+    questsTonight: questsTonight, markLecture: markLecture, markGuide: markGuide, declineBonus: declineBonus,
+    weekBar: weekBar, planWeeks: planWeeks, tomorrowPreview: tomorrowPreview,
     mocks: mocks, recordMock: recordMock, gateStatus: gateStatus,
     guideChecks: guideChecks, toggleGuideCheck: toggleGuideCheck,
     readiness: readiness, paceFactor: paceFactor,
