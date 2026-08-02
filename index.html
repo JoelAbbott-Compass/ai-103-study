@@ -841,6 +841,51 @@
       margin:10px 0 4px;color:var(--onyx);}
   .empty-sub{color:var(--n500);max-width:44ch;margin:0 auto 16px;}
 
+  /* ==========================================================================
+     CHUNK 8 - fresh-start Monday, milestone badges, read-aloud
+     ========================================================================== */
+  /* fresh-start Monday panel (Home): onyx outer, slate stat boxes, orange action.
+     Orange kicker on onyx is ~5.8:1 (AA-pass for this bold uppercase label). */
+  .freshstart{background:var(--onyx);color:#fff;border-radius:var(--radius);
+      padding:24px;margin-bottom:24px;}
+  .fs-kicker{font-family:var(--font-head);font-weight:600;font-size:11px;
+      letter-spacing:.06em;text-transform:uppercase;color:var(--orange);}
+  .fs-title{color:#fff;margin:2px 0 4px;}
+  .fs-sub{font-size:var(--fs-13);color:rgba(255,255,255,.75);margin:0 0 14px;}
+  .fs-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;}
+  .fs-box{margin:0;}
+  .fs-val{font-family:var(--font-head);font-weight:700;font-size:var(--fs-25);
+      color:#fff;font-variant-numeric:tabular-nums;}
+  .fs-lab{font-size:var(--fs-13);color:rgba(255,255,255,.75);margin-top:2px;}
+  .fs-start{margin-top:16px;}
+
+  /* milestone badges (Progress): onyx panel, slate tiles, criteria printed.
+     Earned = lime ring + accent; locked = calm. White text on slate + lime
+     ICON (lime text on slate can fail AA) keeps the "Earned" mark accessible. */
+  .badge-panel{background:var(--onyx);color:#fff;border-radius:var(--radius);padding:20px;}
+  .badge-count{font-family:var(--font-head);font-weight:700;font-size:var(--fs-20);color:#fff;}
+  .badge-sub{font-size:var(--fs-13);margin:4px 0 14px;max-width:60ch;}
+  .badge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;}
+  .badge-tile{margin:0;display:flex;flex-direction:column;gap:6px;padding:14px 16px;}
+  .badge-ic{display:flex;color:rgba(255,255,255,.4);}
+  .badge-ic .icon{width:26px;height:26px;}
+  .badge-tile.earned{box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--lime) 55%, transparent);}
+  .badge-tile.earned .badge-ic{color:var(--lime);}
+  .badge-label{font-family:var(--font-head);font-weight:700;font-size:var(--fs-16);color:#fff;}
+  .badge-tile.locked .badge-label{color:rgba(255,255,255,.72);}
+  .badge-crit{font-size:var(--fs-13);color:rgba(255,255,255,.7);line-height:1.45;}
+  .badge-earned{display:inline-flex;align-items:center;gap:6px;margin-top:2px;
+      font-family:var(--font-head);font-weight:700;font-size:11px;letter-spacing:.05em;
+      text-transform:uppercase;color:#fff;}
+  .badge-earned .icon{width:15px;height:15px;color:var(--lime);}
+
+  /* read-aloud control (guide detail): a standard media control row */
+  .readaloud{display:flex;align-items:center;gap:10px;margin:4px 0 14px;flex-wrap:wrap;}
+  .ra-lead{display:flex;color:var(--slate);}
+  .ra-lead .icon{width:20px;height:20px;}
+  .ra-toggle,.ra-stop{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:8px 16px;}
+  .ra-toggle .icon,.ra-stop .icon{width:17px;height:17px;}
+
   @media(max-width:520px){ .kpi-val{font-size:var(--fs-25);} }
 </style>
 </head>

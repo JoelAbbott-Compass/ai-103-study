@@ -54,7 +54,8 @@
     spread: { term: "Tonight's queue", text: "Reviews pile up when you miss a night, so the app caps tonight at 15 cards and spreads the rest across the coming nights, most-behind cards first. Nothing is dropped and no schedule is rewritten behind your back - the extras simply surface over the next evenings." },
     leech: { term: "Moved to lab", text: "A card you've gotten wrong 3 times isn't a memorization problem - it's a sign that fact needs hands-on practice. The app routes it out of your review pile and onto Saturday's lab list, where you'll build it instead of memorizing it." },
     quests: { term: "Tonight's quests", text: "Small targets built from your real plan each night: tonight's lecture, a guide review, the flashcards that are due, and a set of practice questions. Tap a quest to jump straight into that work; the ring fills as you finish. Watch the lecture before you open the app and mark it - the ring starts already partly full, because that work counts. The bonus quest is optional: skip it with the X and nothing is lost - no penalty, no catch-up debt." },
-    plan: { term: "Your 8-week plan", text: "The road from here to exam week in phases: learn the course, fill the gaps and start practice exams, then drill until two timed mocks clear 85%. The orange cell is the week you're in. One week at a time - progress here never turns into one long bar you're behind on." }
+    plan: { term: "Your 8-week plan", text: "The road from here to exam week in phases: learn the course, fill the gaps and start practice exams, then drill until two timed mocks clear 85%. The orange cell is the week you're in. One week at a time - progress here never turns into one long bar you're behind on." },
+    badges: { term: "Milestones", text: "Badges that mark real progress only - a week fully studied, your first proven skill in a domain, your first mock, an 85% mock, and clearing the booking gate. The goal for each is printed right on the badge, and none are ever given for opening the app or for a total of anything. A locked badge shows exactly what earns it." }
   };
   // one toggle behavior for both trigger styles; host = the surface the panel
   // opens inside (one panel open per host at a time)
@@ -139,6 +140,8 @@
   // ---- HOME ---------------------------------------------------------------
   function renderHome() {
     var wrap = h("div", "view-home");
+    var fs = freshStartPanel();
+    if (fs) wrap.appendChild(fs);
     var r = Store.readiness();
     var gate = Store.gateStatus();
     var tq = Store.tonightQueue();
@@ -462,6 +465,37 @@
       });
     sec.appendChild(card);
     return sec;
+  }
+
+  // ---- fresh-start Monday (chunk 8) ----------------------------------------
+  // On the first Home visit of a new week: last week's HONEST recap + this
+  // week's focus, then a button to dismiss into the normal Home. Onyx outer
+  // panel, slate stat boxes, orange action (layering rule).
+  function freshStartPanel() {
+    var wr = Store.weekReview();
+    if (!wr) return null;
+    var panel = h("div", "freshstart dark-panel");
+    panel.appendChild(h("div", "fs-kicker", "New week"));
+    panel.appendChild(h("h2", "fs-title", "Week " + wr.weekN + (wr.phase ? " — " + wr.phase : "")));
+    panel.appendChild(h("p", "fs-sub",
+      "A fresh start. Here's how last week went, then straight into this week."));
+    var stats = h("div", "fs-stats");
+    stats.appendChild(fsStat(wr.nights + " of " + wr.scheduled, "nights studied last week"));
+    var dTxt = (wr.delta > 0 ? "+" : "") + wr.delta + " pt" + (Math.abs(wr.delta) === 1 ? "" : "s");
+    stats.appendChild(fsStat(dTxt, "readiness change last week"));
+    stats.appendChild(fsStat(String(wr.blindSpots),
+      wr.blindSpots === 1 ? "blind spot to review" : "blind spots to review"));
+    panel.appendChild(stats);
+    var btn = h("button", "btn btn-primary fs-start", "Start week " + wr.weekN + "  →");
+    btn.onclick = function () { Store.markWeekSeen(wr.weekMonday); renderHome(); };
+    panel.appendChild(btn);
+    return panel;
+  }
+  function fsStat(val, lab) {
+    var b = h("div", "panel-inner fs-box");
+    b.appendChild(h("div", "fs-val", val));
+    b.appendChild(h("div", "fs-lab", lab));
+    return b;
   }
 
   // ---- tonight quest components (chunk 7) ----------------------------------
@@ -1259,6 +1293,9 @@
     } else { quiz.disabled = true; }
     wrap.appendChild(quiz);
 
+    var ra = readAloudControl(g);
+    if (ra) wrap.appendChild(ra);
+
     if (g.video) wrap.appendChild(videoBlock(g));
 
     // sticky "On this page" nav
@@ -1381,6 +1418,74 @@
       body.appendChild(pr);
     }
     return box;
+  }
+
+  // ---- read-aloud (chunk 8): browser Web Speech API, play/pause/resume/stop -
+  // v1 uses the browser's built-in speechSynthesis (free, offline, no keys).
+  // Feature-detected so a browser without it simply shows no control. Speech
+  // is cancelled on navigation away, same as the flashcard runner's cleanup.
+  function stripTags(html) {
+    var d = document.createElement("div");
+    d.innerHTML = html || "";
+    return (d.textContent || d.innerText || "").replace(/\s+/g, " ").trim();
+  }
+  function guideSpeechText(g) {
+    var parts = [g.title];
+    if (g.description) parts.push(g.description);
+    (g.sections || []).forEach(function (s) {
+      if (s.kind === "diagram") return;                  // nothing to read in an SVG
+      if (s.title || s.label) parts.push((s.title || s.label) + ".");
+      if (s.note) parts.push(stripTags(s.note));
+      (s.items || []).forEach(function (it) { parts.push(stripTags(it)); });
+      if (s.html) parts.push(stripTags(s.html));
+    });
+    return parts.filter(Boolean).join(". ");
+  }
+  function readAloudControl(g) {
+    if (!("speechSynthesis" in window) || typeof window.SpeechSynthesisUtterance === "undefined") return null;
+    var text = guideSpeechText(g);
+    if (!text) return null;
+    var synth = window.speechSynthesis;
+    var wrap = h("div", "readaloud");
+    var lead = h("span", "ra-lead");
+    lead.innerHTML = (window.ICONS && ICONS.volume2) || "";
+    wrap.appendChild(lead);
+    var toggle = h("button", "btn ra-toggle");
+    var stop = h("button", "btn ra-stop");
+    function paint(stateName) {                            // idle | playing | paused
+      toggle.innerHTML = "";
+      var ic = h("span");
+      ic.innerHTML = (window.ICONS && ICONS[stateName === "playing" ? "pause" : "play"]) || "";
+      if (ic.firstChild) toggle.appendChild(ic.firstChild);
+      toggle.appendChild(document.createTextNode(
+        stateName === "idle" ? "Listen" : stateName === "playing" ? "Pause" : "Resume"));
+      toggle.setAttribute("aria-label", stateName === "playing" ? "Pause reading" : stateName === "paused" ? "Resume reading" : "Read this guide aloud");
+      stop.disabled = stateName === "idle";
+    }
+    function start() {
+      var u = new window.SpeechSynthesisUtterance(text);
+      u.rate = 1;
+      u.onend = function () { paint("idle"); };
+      u.onerror = function () { paint("idle"); };
+      synth.cancel();
+      synth.speak(u);
+      paint("playing");
+    }
+    toggle.onclick = function () {
+      if (!synth.speaking) { start(); return; }
+      if (synth.paused) { synth.resume(); paint("playing"); }
+      else { synth.pause(); paint("paused"); }
+    };
+    stop.innerHTML = (window.ICONS && ICONS.square) || "";
+    stop.appendChild(document.createTextNode("Stop"));
+    stop.setAttribute("aria-label", "Stop reading");
+    stop.onclick = function () { synth.cancel(); paint("idle"); };
+    paint("idle");
+    // never keep reading after the learner leaves the guide
+    window.addEventListener("hashchange", function () { try { synth.cancel(); } catch (e) {} }, { once: true });
+    wrap.appendChild(toggle);
+    wrap.appendChild(stop);
+    return wrap;
   }
 
   function videoBlock(g) {
@@ -1592,6 +1697,9 @@
 
     // the 8-week milestone map: where this week sits on the road to the exam
     wrap.appendChild(planSection());
+
+    // milestone badges: real thresholds only, criteria printed on each
+    wrap.appendChild(badgesSection());
 
     // course position: the whole-course view (lectures + objectives)
     var cp = Store.courseProgress();
@@ -1809,6 +1917,38 @@
       ? "You're in week " + cur.n + ": " + cur.phase + "."
       : "Your plan starts Monday - week 1 begins " + fmtShortDate(STUDY_DATA.meta.study_start) + "."));
     sec.appendChild(card);
+    return sec;
+  }
+  // ---- milestone badges (chunk 8) ------------------------------------------
+  // Onyx panel, slate tiles; earned = lime accent + "Earned", locked = calm
+  // with its criteria printed. Real thresholds only (mechanic #13).
+  function badgesSection() {
+    var data = Store.badges();
+    var sec = section("Milestones", "award", "badges");
+    var panel = h("div", "badge-panel dark-panel");
+    panel.appendChild(h("div", "badge-count", data.earned + " of " + data.total + " earned"));
+    panel.appendChild(h("p", "badge-sub muted",
+      "Each badge marks a real milestone — the goal is printed on every one. Nothing here is given for just showing up."));
+    var grid = h("div", "badge-grid");
+    data.badges.forEach(function (b) {
+      var tile = h("div", "badge-tile panel-inner " + (b.earned ? "earned" : "locked"));
+      tile.setAttribute("role", "img");
+      tile.setAttribute("aria-label", b.label + (b.earned ? " — earned. " : " — locked. ") + b.criteria);
+      var ic = h("span", "badge-ic");
+      ic.innerHTML = (window.ICONS && ICONS.award) || "";
+      tile.appendChild(ic);
+      tile.appendChild(h("div", "badge-label", b.label));
+      tile.appendChild(h("div", "badge-crit", b.criteria));
+      if (b.earned) {
+        var e = h("span", "badge-earned");
+        e.innerHTML = (window.ICONS && ICONS.circleCheck) || "";
+        e.appendChild(document.createTextNode("Earned"));
+        tile.appendChild(e);
+      }
+      grid.appendChild(tile);
+    });
+    panel.appendChild(grid);
+    sec.appendChild(panel);
     return sec;
   }
   function section(title, iconKey, explainKey) {

@@ -36,7 +36,7 @@ window.Store = (function () {
 
   // ---- state --------------------------------------------------------------
   function blank() {
-    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {}, snapshots: [], repairs: [], quests: {} };
+    return { answers: {}, cards: {}, mocks: [], studyDays: [], guides: {}, snapshots: [], repairs: [], quests: {}, weekSeen: {} };
   }
   var state = load();
 
@@ -488,6 +488,79 @@ window.Store = (function () {
     return { offDay: true, nextName: names[new Date(p[0], p[1] - 1, p[2]).getDay()], cards: fc[2].due };
   }
 
+  // ---- milestone badges (W2 chunk 8) --------------------------------------
+  // Real thresholds ONLY, all derived fresh (never stored, so nothing can be
+  // faked): a plan week fully studied, your first proven skill in a domain,
+  // your first mock, an 85% mock, and the booking gate cleared. Every badge
+  // carries its own criteria so a locked one shows exactly what earns it.
+  function badges() {
+    var t = todayStr(), start = STUDY_DATA.meta.study_start;
+    var w = scheduleWalk(), pw = planWeeks();
+    var out = [];
+    // week-complete: every scheduled night of a fully-elapsed plan week actually
+    // studied (a freeze saves the streak, not this badge - real study only)
+    pw.weeks.forEach(function (wk) {
+      var mon = addDays(start, (wk.n - 1) * 7), sat = addDays(mon, 5);
+      var done = sat <= t;
+      for (var i = 0; i < 6 && done; i++) {
+        var st = w.states[addDays(mon, i)];
+        if (st !== "studied" && st !== "extra") done = false;
+      }
+      out.push({
+        id: "week" + wk.n, group: "week", label: "Week " + wk.n + " complete",
+        criteria: "Study every scheduled night in week " + wk.n + ".", earned: done
+      });
+    });
+    // first objective mastered in each domain (uses the rigorous mastered rule)
+    var mByDom = {};
+    objectiveStats().forEach(function (o) { if (o.mastered) mByDom[o.domain] = (mByDom[o.domain] || 0) + 1; });
+    STUDY_DATA.domains.forEach(function (d) {
+      out.push({
+        id: "dom_" + d.id, group: "domain", label: "First skill: " + d.name,
+        criteria: "Master your first objective in " + d.name + " - 3 questions right across 2 days.",
+        earned: (mByDom[d.id] || 0) >= 1
+      });
+    });
+    // mock milestones
+    var mk = state.mocks, thr = STUDY_DATA.meta.booking_gate.threshold;
+    out.push({ id: "mock1", group: "mock", label: "First mock taken", criteria: "Finish one full timed mock exam.", earned: mk.length >= 1 });
+    out.push({ id: "mock85", group: "mock", label: "First 85% mock", criteria: "Score " + thr + "% or higher on a timed mock.", earned: mk.some(function (m) { return m.pct >= thr; }) });
+    out.push({ id: "gate", group: "mock", label: "Booking gate cleared", criteria: "Score " + thr + "%+ on two different mocks.", earned: gateStatus().cleared });
+    return { badges: out, earned: out.filter(function (b) { return b.earned; }).length, total: out.length };
+  }
+
+  // ---- fresh-start Monday (W2 chunk 8) ------------------------------------
+  // Week boundaries are the strongest natural re-commitment moment (fresh-start
+  // effect). On the first Home visit of a new week, show last week's HONEST
+  // recap + this week's focus. Only stored fact is a per-week dismissal flag.
+  function weekReview() {
+    var t = todayStr(), start = STUDY_DATA.meta.study_start;
+    if (t < start) return null;
+    var pw = planWeeks(), cur = pw.current;
+    if (!cur || cur < 2) return null;                 // no prior week in week 1
+    var weekMonday = addDays(start, (cur - 1) * 7);
+    if ((state.weekSeen || {})[weekMonday]) return null;
+    var w = scheduleWalk(), lastMon = addDays(start, (cur - 2) * 7);
+    var nights = 0;
+    for (var i = 0; i < 6; i++) {
+      var st = w.states[addDays(lastMon, i)];
+      if (st === "studied" || st === "extra") nights++;
+    }
+    var baseR = null, endR = null;
+    (state.snapshots || []).forEach(function (s) {
+      if (s.date <= lastMon) baseR = s.r;
+      if (s.date <= weekMonday) endR = s.r;
+    });
+    var delta = (baseR != null && endR != null) ? Math.round((endR - baseR) * 100) : 0;
+    var blind = 0;
+    calibration().forEach(function (p) { if (p.tag === "high" && !p.correct) blind++; });
+    return {
+      weekMonday: weekMonday, weekN: cur, phase: pw.weeks[cur - 1] ? pw.weeks[cur - 1].phase : "",
+      lastWeekN: cur - 1, nights: nights, scheduled: 6, delta: delta, blindSpots: blind
+    };
+  }
+  function markWeekSeen(m) { if (!state.weekSeen) state.weekSeen = {}; state.weekSeen[m] = true; save(); }
+
   function mocks() { return state.mocks.slice(); }
   function recordMock(score, total) {
     state.mocks.push({ date: todayStr(), score: score, total: total, pct: Math.round((score / total) * 100) });
@@ -622,6 +695,7 @@ window.Store = (function () {
     tonightQueue: tonightQueue, leeches: leeches, studyDaysWindow: studyDaysWindow,
     questsTonight: questsTonight, markLecture: markLecture, markGuide: markGuide, declineBonus: declineBonus,
     weekBar: weekBar, planWeeks: planWeeks, tomorrowPreview: tomorrowPreview,
+    badges: badges, weekReview: weekReview, markWeekSeen: markWeekSeen,
     mocks: mocks, recordMock: recordMock, gateStatus: gateStatus,
     guideChecks: guideChecks, toggleGuideCheck: toggleGuideCheck,
     readiness: readiness, paceFactor: paceFactor,
